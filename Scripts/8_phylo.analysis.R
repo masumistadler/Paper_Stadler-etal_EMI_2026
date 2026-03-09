@@ -2,18 +2,21 @@
 ##
 ## Script name: 8_phylo.analysis.R
 ##
-## Purpose of script: Phylogenetic analyses
+## Purpose of script: Here, we conduct microbial phylogenetic and
+##                    DOM chemical similarity analysis.
 ##
 ## Author: Masumi Stadler
 ##
 ## Date Finalized: 
 ##
-## Copyright (c) Masumi Stadler, 2025
+## Copyright (c) Masumi Stadler, 2026
 ## Email: m.stadler.jp.at@gmail.com
 ##
 ## -------------------------------------------------------------------------
 ##
-## Notes:
+## Notes: Figures 3, 4, and S5, S7, S8, Table S4 are plotted in this script.
+##        Data for figure S6 are produced here and they were used to
+##        plot the phylogenetic trees in iTOL.
 ##
 ##
 ## -------------------------------------------------------------------------
@@ -121,7 +124,7 @@ length(unique(mo[model.type != "LM" & r.test == FALSE & p.val < 0.05,]$ID)) # 12
 #\\ UniFrac -------------------------------------------------------------
 set.seed(3)
 # read in chapter 2 phyloseq object
-phy <- readRDS("./Data/phyloseq_otu.tax.samp.phylo_SINA_chapter2.rds")
+phy <- readRDS("./Data/Microbial/phyloseq_otu.tax.samp.phylo_SINA_chapter2.rds")
 # extract OTU matrix
 otu.mat <- otu_mat(phy)
 
@@ -170,13 +173,7 @@ dbrda.uni <- ordinate(uniphy, method = "RDA", distance = unifr)
 nmds.uni <- ordinate(uniphy, method = "NMDS", k = 2, distance = unifr)
 nmds.uni.all <- ordinate(uniphy.all, method = "NMDS", k = 2, distance = unifr.all)
 
-# quick plot
-plot_ordination(uniphy, pcoa.uni)
-plot_ordination(uniphy.all, nmds.uni.all)
-plot_ordination(uniphy, nmds.uni)
-plot_ordination(uniphy, dbrda.uni)
-
-# Cleaner plot, colour by spatial patterns and significance
+# Plot, colour by spatial patterns and significance
 pcoa.df <- data.frame(pcoa.uni$vectors)
 pcoa.df$cat <- row.names(pcoa.df)
 pcoa.df <- pcoa.df %>% separate(cat, sep = "[_]", into = c("year","season","sAU","c.ns.s"))
@@ -201,12 +198,11 @@ hulls <- ddply(pcoa.df, "c.ns.s", find_hull, axes = c(1,2))
     scale_linetype_manual(values = c("dashed","solid")) +
     #scale_shape_manual(values = c(4,19), name = "Significance") +
     annotate(x = c(-0.12,0.25), y = c(0.26,0.23), geom = "text", label = c("sign.","n.s."), colour = "grey30") +
-    labs(title = "PCoA: Unweighted UniFrac",
+    labs(title = "PCoA: Unweighted UniFrac with bulk",
          x = paste("PC1 [", round(pcoa.uni$values$Relative_eig[1],3) * 100,"%]"),
          y = paste("PC2 [", round(pcoa.uni$values$Relative_eig[2],3) * 100,"%]")) +
     guides(linetype = "none", size = "none", 
            fill = guide_legend(override.aes = list(size = 3))))
-
 
 # Same for NMDS
 nmds.df <- data.frame(nmds.uni$points)
@@ -232,12 +228,12 @@ hulls <- ddply(nmds.df, "c.ns.s", find_hull, axes = c(1,2))
     #scale_shape_manual(values = c(4,19), name = "Significance") +
     annotate(x = -.25, y = 0.3, geom = "text", label = paste("k = 2, stress = ", round(nmds.uni$stress, 3)),
              colour = "gray20") +
-    annotate(x = c(-0.25, 0.5), y = c(0.15,0.15), geom = "text", label = c("n.s.","sign."), colour = "grey30") +
-    labs(title = "NMDS: Unweighted UniFrac") +
+    annotate(x = c(-0.28, 0.5), y = c(0.15,0.15), geom = "text", label = c("unreactive","reactive"), colour = "grey30") +
+    labs(title = "NMDS: Unweighted UniFrac with reactive and unreactive models") +
     guides(linetype = "none", size = "none", 
            fill = guide_legend(override.aes = list(size = 3))))
 
-ggsave("./Figures/Analysis/UniFrac_NMDS_DNA.png", nmds.p, height = 15, width = 20, units = 'cm')
+
 
 nmds.df.all <- data.frame(nmds.uni.all$points)
 nmds.df.all$cat <- row.names(nmds.df.all)
@@ -259,15 +255,14 @@ nmds.df.all$sAU <- factor(nmds.df.all$sAU, levels = c("increase","non-linear inc
     scale_fill_manual(values = col.vec, name = "Spatial pattern") +
     scale_linetype_manual(values = c("dashed","solid")) +
     #scale_shape_manual(values = c(4,19), name = "Significance") +
-    labs(title = "NMDS: Unweighted UniFrac with all models") +
+    labs(title = "NMDS: Unweighted UniFrac with bulk") +
     guides(linetype = "none", size = "none", 
            fill = guide_legend(override.aes = list(size = 3))))
 
-ggsave("./Figures/Analysis/UniFrac_NMDS_DNA_all.png", nmds.p.all, height = 15, width = 20, units = 'cm')
-# save plot
-ggsave("./Figures/Analysis/UniFrac_NMDSPCOA_DNA_24-02.png", 
-       ggarrange(nmds.p.all, nmds.p, pcoa.p, ncol = 3, common.legend = T, legend = "right"),
-       height = 13, width = 45, units = 'cm')
+# # save plot
+# ggsave("./Figures/figS7.png", 
+#        ggarrange(nmds.p.all, nmds.p, ncol = 2, common.legend = T, legend = "right"),
+#        height = 15, width = 45, units = 'cm')
 
 #\\\ PERMANOVA ----------------------------------------------------------------
 # add bias.adjust since it's not a balanced sampling design
@@ -323,28 +318,6 @@ perm3 <- anova(mod3, permutations = 9999, pariwise = T, parallel = 10)
 perm4 <- anova(mod4, permutations = 9999, pariwise = T, parallel = 10)
 # dispersion are all equal
 # = PERMANOVA assumption fulfilled
-
-# Calculate phylogenetic diversity by spatial pattern
-# Faith's diversity is highly correlated to species richness, so it's not particularly helpful in our case.
-# faith <- pd(t(otu_mat(uniphy)), tree = phy_tree(uniphy), include.root = T)
-# set.seed(3)
-# cor.faith <- ses.pd(t(otu_mat(uniphy)), tree = phy_tree(uniphy), include.root = T)
-# 
-# faith <- setDT(faith, keep.rownames = "ID") %>% separate(col = "ID", into = c("year",'season','sAU','c.ns.s'), sep = "_") %>% setDT()
-# faith <- melt(faith, id.vars = c('year','season','sAU','c.ns.s'), variable.name = "diversity", value.name = "value")
-# faith[, sAU := factor(sAU, 
-#                       levels = c("increase", "non-linear increase",
-#                                  "multimodal increase",
-#                                  "unimodal",
-#                                  "multimodal decrease",
-#                                  "non-linear decrease", "decrease"))]
-# 
-# ggplot(faith, aes(x = sAU, y = log10(value))) + 
-#   theme_bw() +
-#   geom_boxplot(aes(colour = c.ns.s)) +
-#   facet_grid(diversity~., scale ="free_y") +
-#   theme(axis.text.x = element_text(angle = 90, vjust = .5))
-#unifr <- picante::unifrac(uni.df[,-1], phy@phy_tree) # unweighted, presence absence
 
 rm(nmds.uni.all, pcoa.df, pcoa.p, pcoa.uni, perm1, perm2, perm3, perm4, mod, mod2, mod3, mod4, test.df, uni.df,
    copy.ls, dbrda.uni, hulls, match.df,
@@ -440,27 +413,10 @@ phy <- melt(phy, id.vars = 1:4, measure.vars = 5:6, value.name = "phyl.rel", var
 phy.all <- melt(phy.all, id.vars = 1:3, measure.vars = 4:5, value.name = "phyl.rel", variable.name = "index")
 phy.all$c.ns.s <- "all"
 
+# merge
 phy <- bind_rows(phy.all, phy)
-# phy[, minAU := factor(sAU, levels = c("increase", "non-linear increase",
-#                                       "multimodal increase",
-#                                       "unimodal",
-#                                       "multimodal decrease",
-#                                       "non-linear decrease", "decrease"),
-#                       labels = c("increase", "increase",
-#                                  "increase",
-#                                  "unimodal",
-#                                  "decrease",
-#                                  "decrease", "decrease"))]
-# 
-# phy[, sAU := factor(sAU,
-#                       levels = c("increase", "non-linear increase",
-#                                  "multimodal increase",
-#                                  "unimodal",
-#                                  "multimodal decrease",
-#                                  "non-linear decrease", "decrease"))]
-
+# define plotting factors
 phy[, minAU := factor(minAU, levels = c('increase', "unimodal", 'decrease'))]
-
 phy[, c.ns.s := factor(c.ns.s, levels = c('sig.', 'n.s.', 'all'))]
 
 (nri.p <- ggplot(phy[c.ns.s != "n.s." & index == "NRI",]) +
@@ -479,24 +435,17 @@ phy[, c.ns.s := factor(c.ns.s, levels = c('sig.', 'n.s.', 'all'))]
              colour = "grey50", hjust = 0) +
     labs(y = "NRI", x = "Spatial pattern",
          title = "Microbial phylogeny"))
-#ggsave("./Figures/Analysis/NRI_minAU_dunnTest_24-06.png", nti.p, width = 10, height = 10, units = 'cm')
-
-#t <- ggarrange(nri.p, b, ncol = 2, common.legend = T, legend = "right", align = "hv")
-#ggsave("./Figures/Analysis/NTI_16Scopynum_minAU.png", t, width = 17, height = 10, units = 'cm')
 
 #\\\ Statistical Testing ----------------------------------------------------------------------------
 test.df <- phy[c.ns.s != "n.s." & index == "NTI",]
+
 t.test(test.df[minAU == "increase" & index == "NTI",]$phyl.rel ~ test.df[minAU == "increase" & index == "NTI",]$c.ns.s)
-# t.test(test.df[minAU == "non-linear increase" & index == "NTI",]$phyl.rel ~ test.df[minAU == "non-linear increase" & index == "NTI",]$c.ns.s)
-# t.test(test.df[minAU == "multimodal increase" & index == "NTI",]$phyl.rel ~ test.df[minAU == "multimodal increase" & index == "NTI",]$c.ns.s)
 t.test(test.df[minAU == "unimodal" & index == "NTI",]$phyl.rel ~ test.df[minAU == "unimodal" & index == "NTI",]$c.ns.s)
-# t.test(test.df[minAU == "multimodal decrease" & index == "NTI",]$phyl.rel ~ test.df[minAU == "multimodal decrease" & index == "NTI",]$c.ns.s)
-# t.test(test.df[minAU == "non-linear decrease" & index == "NTI",]$phyl.rel ~ test.df[minAU == "non-linear decrease" & index == "NTI",]$c.ns.s)
 t.test(test.df[minAU == "decrease" & index == "NTI",]$phyl.rel ~ test.df[minAU == "decrease" & index == "NTI",]$c.ns.s)
+
 kruskal.test(phyl.rel ~ c.ns.s, data = test.df) # no
 
 test.df <- phy[c.ns.s == "sig." & index == "NRI",]
-#kruskal.test(phyl.rel ~ sAU, data = test.df) # no
 kruskal.test(phyl.rel ~ minAU, data = test.df) # yes
 dunn.res <- dunn_test(data = test.df, phyl.rel ~ minAU, p.adjust.method = "BH") # increase vs. decrease, unimodal vs. decrease
 
@@ -504,14 +453,11 @@ test.df <- phy[c.ns.s == "sig." & index == "NTI",]
 kruskal.test(phyl.rel ~ sAU, data = test.df) # yes
 kruskal.test(phyl.rel ~ minAU, data = test.df) # no
 dunn.res <- dunn_test(data = test.df, phyl.rel ~ minAU, p.adjust.method = "BH") # none
-#dunn.res <- dunn_test(data = test.df, phyl.rel ~ minAU, p.adjust.method = "BH")
 
 test.df <- phy[c.ns.s == "all" & index == "NTI",]
-#kruskal.test(phyl.rel ~ sAU, data = test.df) # no
 kruskal.test(phyl.rel ~ minAU, data = test.df) # no
 
 test.df <- phy[c.ns.s == "all" & index == "NRI",]
-#kruskal.test(phyl.rel ~ sAU, data = test.df) # no
 kruskal.test(phyl.rel ~ minAU, data = test.df) # no
 
 # DOM ---------------------------------------------------------------------------
@@ -533,34 +479,7 @@ d <- dist(mf.df, method = 'euclidean')
 hc1 <- hclust(d, method = 'complete')
 dend <- as.dendrogram(hc1)
 ft.tree <-  as.phylo(hc1)
-
 #write.tree(ft.tree,"./Output/FT_hiercl.tree")
-
-# Plot tree
-# no.label <- function(x) {
-#   if (stats::is.leaf(x)){
-#     attr(x, "label") <- NULL
-#   }
-#   return(x)
-# }
-#test <- dendrapply(dend, no.label)
-
-#clusters <- cutree(hc1, 5)
-#clusters <- cutree(hc1, 4)
-#plot(test, cex = 0.5, col = "grey50")
-#rect.hclust(tree = hc1, k = 5, which = 1:5, cluster =  clusters, border = c("#999933", "#882255","gray","#88CCEE","#AA4499"))
-
-
-# make it circular and pretty
-#library(circlize); library(dendextend)
-library(viridisLite)
-cl.col <- viridis(6, option = "magma", direction = -1)[2:6]
-cl.col.unord <-c(cl.col[1],cl.col[5],cl.col[3],cl.col[4],cl.col[2])
-#Cluster order: 1, 5, 3, 4, 2
-# small, high, medium, high, small mass
-# fav, fav, fav, unfav, unfav
-# arom, arom, low arom, low arom, low arom
-
 
 # Check if the clusters are significantly different
 ct <- cutree(hc1, 5) # tried with 5, however, two clusters not statistically significantly different
@@ -628,8 +547,17 @@ sum.box <- sum.box[, variable := factor(variable, levels =c('Mass*(mz)','C','H',
 
 box.df <- box.df %>% filter(variable != "S")
 sum.box <- sum.box %>% filter(variable != "S")
-# Plot
 
+# make a colour palette
+library(viridisLite)
+cl.col <- viridis(6, option = "magma", direction = -1)[2:6]
+cl.col.unord <-c(cl.col[1],cl.col[5],cl.col[3],cl.col[4],cl.col[2])
+#Cluster order: 1, 5, 3, 4, 2
+# small, high, medium, high, small mass
+# fav, fav, fav, unfav, unfav
+# arom, arom, low arom, low arom, low arom
+
+# Plot
 (bh <- ggplot() +
     theme_custom() +
     geom_violin(data = box.df, aes(x = as.factor(cluster), y = value,
@@ -643,17 +571,37 @@ sum.box <- sum.box %>% filter(variable != "S")
     scale_fill_manual(values = cl.col, name = "") +
     guides(fill = "none") +
     labs(x = "Cluster", y = ""))
-#ggsave("./Figures/Suppl/FT_clusters_boxpot_char_dunn.png", bh, height = 10, width = 20, units = 'cm')
 
+#ggsave("./Figures/figS8.png", bh, height = 10, width = 20, units = 'cm')
 #write.table(cl.df, file = "./Output/dom_hier.cluster_res.csv", sep = ",", row.names = F)
+
+# Make table for latex: Table S4 ----------------------------------------------
+# calculate averages
+temp <- box.df %>% group_by(variable, cluster) %>%
+  dplyr::summarise(mean = round(mean(value, na.rm = T),1),
+                   sd = round(sd(value, na.rm = T),1)) %>%
+  mutate(var = paste0(mean, " $pm$ ", sd)) %>%
+  filter(variable %in% c("Mass*(mz)","H/C","O/C","C/N", "'AI'['mod']", "NOSC")) %>%
+  ungroup %>% 
+  setDT()
+
+temp <- dcast(temp, cluster ~ variable)
+
+# make table, copy output in LaTeX and adjust formatting
+knitr::kable(temp, "latex", booktabs = T) %>%
+  kable_styling(position = "center", full_width = F)
 
 rm(order.df, krusk, dunn, dunn.let, bh, box.df, sum.box,
    variable.list)
 
+# Plot Van Krevelen diagrams
 cross <- cross[cl.df, , on = .(molecular.formula)]
-#cross[, cluster := factor(cluster, levels = c(1,5,3,4,2), labels = c(1,2,3,4,5))]
+
+#save this cross table
+write.table(cross, "./Data/FT/cross_all_w.clusters.csv", sep = ",", row.names = F)
+
+# set colours
 cl.col <- viridis(6, option = "magma", direction = -1)[2:6]
-#cl.col <- viridis(5, option = "magma", direction = -1)
 
 (van1 <- ggplot(cross) +
     theme_custom()+
@@ -678,13 +626,13 @@ cross[, categories := factor(categories,
           legend.title = element_text(size = 12), legend.text = element_text(size = 10),
           legend.key.size = unit(0.5, 'cm'), legend.key.spacing.y = unit(5, 'pt')) +
     labs(x = "O/C", y = "H/C"))
-#(cl.van <- ggarrange(van1, van2, ncol = 2, labels = "auto",align = "hv"))
 
+# merge the two
 (cl.van <- (van1 + van2 + plot_layout(guides = 'collect', axes = 'collect') +
               plot_annotation(tag_levels = "a") & 
               theme(plot.tag = element_text(size = 14, face = "bold"))))
 
-ggsave("./Figures/Analysis/FT_hier.cl_van.krev_24-06.png", cl.van, width = 23, height = 10, units = 'cm')
+#ggsave("./Figures/fig4.png", cl.van, width = 23, height = 10, units = 'cm')
 
 # Chemical similarity ----------------------------------------------------------------------
 
@@ -784,15 +732,9 @@ phy[, minAU := factor(sAU, levels = c("increase", "non-linear increase",
                                  "decrease",
                                  "decrease", "decrease"))]
 
-phy[, sAU := factor(sAU,
-                    levels = c("increase", "non-linear increase",
-                               "multimodal increase",
-                               "unimodal",
-                               "multimodal decrease",
-                               "non-linear decrease", "decrease"))]
-
+# define levels
 phy[, c.ns.s := factor(c.ns.s, levels = c('sig.', 'n.s.', 'all'))]
-
+# remove any NAs
 phy <- phy[!is.na(minAU),]
 
 (nti.p.ft <- ggplot(phy[c.ns.s != "n.s." & index == "NTI",]) +
@@ -810,7 +752,7 @@ phy <- phy[!is.na(minAU),]
              colour = "grey50", hjust = 0) +
     labs(y = "NTI", x = "Spatial pattern",
          title = "Chemical similarity"))
-ggsave("./Figures/Analysis/FT_NTI_minAU_dunnTest.png", nti.p, width = 10, height = 10, units = 'cm')
+# ggsave("./Figures/Analysis/FT_NTI_minAU_dunnTest.png", nti.p, width = 10, height = 10, units = 'cm')
 
 # (nri.p <- ggplot(phy[c.ns.s != "n.s." & index == "NRI",]) +
 #     theme_custom() +
@@ -827,32 +769,23 @@ ggsave("./Figures/Analysis/FT_NTI_minAU_dunnTest.png", nti.p, width = 10, height
 #               colour = "grey50", hjust = 0) +
 #     labs(y = "Nearest Relative Index (NRI)", x = "Spatial pattern",
 #          title = "Chemical similarity"))
-ggsave("./Figures/Analysis/FT_NRI_minAU_dunnTest.png", nri.p, width = 10, height = 10, units = 'cm')
-
-ft.t <- ggarrange(nti.p, b, ncol = 2, common.legend = T, legend = "right", align = "hv")
-#ggsave("./Figures/Analysis/NTI_16Scopynum_minAU.png", t, width = 17, height = 10, units = 'cm')
+# ggsave("./Figures/Analysis/FT_NRI_minAU_dunnTest.png", nri.p, width = 10, height = 10, units = 'cm')
 
 (t <- (nri.p + nti.p.ft + plot_layout(guides = 'collect', axes = 'collect') +
     plot_annotation(tag_levels = "a") & 
     theme(plot.tag = element_text(size = 14, face = "bold"))))
 
-ggsave("./Figures/Analysis/MO-NRI_FT-NTI.png", t, width = 17, height = 9.5, units = 'cm')
+#ggsave("./Figures/fig3.png", t, width = 17, height = 9.5, units = 'cm')
 
 # test between bulk vs reactive
 test.df <- phy[c.ns.s != "n.s." & index == "NTI",]
 t.test(test.df[sAU == "increase" & index == "NTI",]$phyl.rel ~ test.df[sAU == "increase" & index == "NTI",]$c.ns.s)
-# t.test(test.df[sAU == "non-linear increase" & index == "NTI",]$phyl.rel ~ test.df[sAU == "non-linear increase" & index == "NTI",]$c.ns.s)
-# t.test(test.df[sAU == "multimodal increase" & index == "NTI",]$phyl.rel ~ test.df[sAU == "multimodal increase" & index == "NTI",]$c.ns.s)
 t.test(test.df[sAU == "unimodal" & index == "NTI",]$phyl.rel ~ test.df[sAU == "unimodal" & index == "NTI",]$c.ns.s)
-# t.test(test.df[sAU == "multimodal decrease" & index == "NTI",]$phyl.rel ~ test.df[sAU == "multimodal decrease" & index == "NTI",]$c.ns.s)
-# t.test(test.df[sAU == "non-linear decrease" & index == "NTI",]$phyl.rel ~ test.df[sAU == "non-linear decrease" & index == "NTI",]$c.ns.s)
 t.test(test.df[sAU == "decrease" & index == "NTI",]$phyl.rel ~ test.df[sAU == "decrease" & index == "NTI",]$c.ns.s)
 
 # bulk NRI test
 test.df <- phy[c.ns.s == "all" & index == "NRI",]
 kruskal.test(phyl.rel ~ minAU, data = test.df) # no
-#dunn.res <- dunn_test(data = test.df, phyl.rel ~ sAU, p.adjust.method = "BH") # none
-#dunn.res <- dunn_test(data = test.df, phyl.rel ~ minAU, p.adjust.method = "BH") # unimodal vs. decrease p = 0.016
 
 # bulk NTI test
 test.df <- phy[c.ns.s == "all" & index == "NTI",]
@@ -868,72 +801,71 @@ dunn.res <- dunn_test(data = test.df, phyl.rel ~ minAU, p.adjust.method = "BH") 
 
 ## Functional similarity in DOM -----------------------------------------------------------------------------------
 
-ft[mf.df, c("AImod","NOSC") := list(i.AImod, i.NOSC), on = c("MF==molecular.formula")]
-reac <- ft[c.ns.s == "sig.",]
-reac[, bulk := "Reactive"]
-ft[, bulk := "Bulk"]
-
-all.ft <- bind_rows(reac, ft)
-
-all.ft[, bulk := factor(bulk, levels = c("Reactive","Bulk"))]
-all.ft[, minAU := factor(minAU, levels = c("increase","unimodal","decrease"))]
-
-all.ft <- all.ft[!is.na(minAU),]
-(nosc <- ggplot(all.ft, aes(x = minAU, y = NOSC)) +
-    theme_custom() +
-    geom_hline(yintercept = 0, colour = "grey70", linetype = "dashed") +
-    #facet_grid(season~year) +
-    geom_boxplot(aes(fill = bulk), outlier.size = 1, outlier.colour = "grey50") +
-    geom_bracket(xmin = c(1.2), xmax = c(3.2), label = c("***"), y.position = c(2.2), tip.length = 0, colour = "grey50",
-                 label.size = 2.5) +
-    geom_bracket(xmin = c(1.2, 2.2), xmax = c(2.15,3.2), label = c("***","***"), y.position = c(2,2), tip.length = 0,
-                 colour = "grey50", label.size = 2.5) +
-    geom_bracket(xmin = c(.8, 1.85), xmax = c(1.8,2.8), label = c("***","***"), y.position = c(1.6,1.6), tip.length = 0,
-                 colour= 'darkorange', label.size = 2.5) +
-    geom_bracket(xmin = c(.8), xmax = c(2.8), label = c("***"), y.position = c(1.8), tip.length = 0,
-                 colour= 'darkorange', label.size = 2.5) +
-    scale_fill_manual(values = c("orange","white"), name = "Dataset") +
-    labs(x = "Spatial pattern", y = "NOSC"))
-
-test.df <- all.ft[bulk == "Bulk",]
-kruskal.test(NOSC ~ minAU, data = test.df) # yes, p < 0.016
-dunn.res <- dunn_test(data = test.df, NOSC ~ minAU, p.adjust.method = "BH") # unimodal vs. decrease, unimodal vs. increase
-
-test.df <- all.ft[bulk == "Reactive",]
-kruskal.test(NOSC ~ minAU, data = test.df) # yes, p < 0.016
-dunn.res <- dunn_test(data = test.df, NOSC ~ minAU, p.adjust.method = "BH") # all
-
-# calculate means and sd
-all.ft[, .(mean = mean(NOSC), sd = sd(NOSC)), by = .(minAU)]
-
-
-(ai <- ggplot(all.ft, aes(x = minAU, y = AImod)) +
-    theme_custom() +
-    geom_boxplot(aes(fill = bulk), outlier.size = 1, outlier.colour = "grey50") +
-    geom_bracket(xmin = c(1.2), xmax = c(3.2), label = c("***"), y.position = c(1.2), tip.length = 0, colour = "grey50",
-                 label.size = 2.5) +
-    geom_bracket(xmin = c(1.2, 2.2), xmax = c(2.15,3.2), label = c("***","***"), y.position = c(1.1), tip.length = 0,
-                 colour = "grey50", label.size = 2.5) +
-    geom_bracket(xmin = c(.8, 1.85), xmax = c(1.8,2.8), label = c("***","***"), y.position = c(0.9,0.9), tip.length = 0,
-                 colour= 'darkorange') +
-    geom_bracket(xmin = c(.8), xmax = c(2.8), label = c("***"), y.position = c(1), tip.length = 0,
-                 colour= 'darkorange') +
-    scale_fill_manual(values = c("orange","white"), name = "Dataset") +
-    labs(x = "Spatial pattern", y = expression(paste("AI"["mod"]))))
-
-test.df <- all.ft[bulk == "Bulk",]
-kruskal.test(AImod ~ minAU, data = test.df) # yes, p < 0.016
-dunn.res <- dunn_test(data = test.df, AImod ~ minAU, p.adjust.method = "BH") # all
-
-test.df <- all.ft[bulk == "Reactive",]
-kruskal.test(AImod ~ minAU, data = test.df) # yes, p < 0.016
-dunn.res <- dunn_test(data = test.df, AImod ~ minAU, p.adjust.method = "BH") # all
-
-(func.p <- (nosc + ai) + plot_layout(axes = "collect", guides = "collect") +
-    plot_annotation(tag_levels = "a") & 
-    theme(plot.tag = element_text(size = 14, face = "bold")))
-
-ggsave("./Figures/Analysis/FT-NOSC_AImod.png", func.p, width = 17, height = 9.5, units = 'cm')
+# ft[mf.df, c("AImod","NOSC") := list(i.AImod, i.NOSC), on = c("MF==molecular.formula")]
+# reac <- ft[c.ns.s == "sig.",]
+# reac[, bulk := "Reactive"]
+# ft[, bulk := "Bulk"]
+# 
+# all.ft <- bind_rows(reac, ft)
+# 
+# all.ft[, bulk := factor(bulk, levels = c("Reactive","Bulk"))]
+# all.ft[, minAU := factor(minAU, levels = c("increase","unimodal","decrease"))]
+# 
+# all.ft <- all.ft[!is.na(minAU),]
+# (nosc <- ggplot(all.ft, aes(x = minAU, y = NOSC)) +
+#     theme_custom() +
+#     geom_hline(yintercept = 0, colour = "grey70", linetype = "dashed") +
+#     #facet_grid(season~year) +
+#     geom_boxplot(aes(fill = bulk), outlier.size = 1, outlier.colour = "grey50") +
+#     geom_bracket(xmin = c(1.2), xmax = c(3.2), label = c("***"), y.position = c(2.2), tip.length = 0, colour = "grey50",
+#                  label.size = 2.5) +
+#     geom_bracket(xmin = c(1.2, 2.2), xmax = c(2.15,3.2), label = c("***","***"), y.position = c(2,2), tip.length = 0,
+#                  colour = "grey50", label.size = 2.5) +
+#     geom_bracket(xmin = c(.8, 1.85), xmax = c(1.8,2.8), label = c("***","***"), y.position = c(1.6,1.6), tip.length = 0,
+#                  colour= 'darkorange', label.size = 2.5) +
+#     geom_bracket(xmin = c(.8), xmax = c(2.8), label = c("***"), y.position = c(1.8), tip.length = 0,
+#                  colour= 'darkorange', label.size = 2.5) +
+#     scale_fill_manual(values = c("orange","white"), name = "Dataset") +
+#     labs(x = "Spatial pattern", y = "NOSC"))
+# 
+# test.df <- all.ft[bulk == "Bulk",]
+# kruskal.test(NOSC ~ minAU, data = test.df) # yes, p < 0.016
+# dunn.res <- dunn_test(data = test.df, NOSC ~ minAU, p.adjust.method = "BH") # unimodal vs. decrease, unimodal vs. increase
+# 
+# test.df <- all.ft[bulk == "Reactive",]
+# kruskal.test(NOSC ~ minAU, data = test.df) # yes, p < 0.016
+# dunn.res <- dunn_test(data = test.df, NOSC ~ minAU, p.adjust.method = "BH") # all
+# 
+# # calculate means and sd
+# all.ft[, .(mean = mean(NOSC), sd = sd(NOSC)), by = .(minAU)]
+# 
+# 
+# (ai <- ggplot(all.ft, aes(x = minAU, y = AImod)) +
+#     theme_custom() +
+#     geom_boxplot(aes(fill = bulk), outlier.size = 1, outlier.colour = "grey50") +
+#     geom_bracket(xmin = c(1.2), xmax = c(3.2), label = c("***"), y.position = c(1.2), tip.length = 0, colour = "grey50",
+#                  label.size = 2.5) +
+#     geom_bracket(xmin = c(1.2, 2.2), xmax = c(2.15,3.2), label = c("***","***"), y.position = c(1.1), tip.length = 0,
+#                  colour = "grey50", label.size = 2.5) +
+#     geom_bracket(xmin = c(.8, 1.85), xmax = c(1.8,2.8), label = c("***","***"), y.position = c(0.9,0.9), tip.length = 0,
+#                  colour= 'darkorange') +
+#     geom_bracket(xmin = c(.8), xmax = c(2.8), label = c("***"), y.position = c(1), tip.length = 0,
+#                  colour= 'darkorange') +
+#     scale_fill_manual(values = c("orange","white"), name = "Dataset") +
+#     labs(x = "Spatial pattern", y = expression(paste("AI"["mod"]))))
+# 
+# test.df <- all.ft[bulk == "Bulk",]
+# kruskal.test(AImod ~ minAU, data = test.df) # yes, p < 0.016
+# dunn.res <- dunn_test(data = test.df, AImod ~ minAU, p.adjust.method = "BH") # all
+# 
+# test.df <- all.ft[bulk == "Reactive",]
+# kruskal.test(AImod ~ minAU, data = test.df) # yes, p < 0.016
+# dunn.res <- dunn_test(data = test.df, AImod ~ minAU, p.adjust.method = "BH") # all
+# 
+# (func.p <- (nosc + ai) + plot_layout(axes = "collect", guides = "collect") +
+#     plot_annotation(tag_levels = "a") & 
+#     theme(plot.tag = element_text(size = 14, face = "bold")))
+# #ggsave("./Figures/Analysis/FT-NOSC_AImod.png", func.p, width = 17, height = 9.5, units = 'cm')
 
 
 # Number of models per travel time range --------------------------------------------------------------------
@@ -958,4 +890,60 @@ range.df[, dataset := factor(dataset, levels = c("DOM", "DNA", "RNA"))]
     labs(x = "", y = "Proportion of models\nby travel time range") +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)))
 
-ggsave('./Figures/Analysis/travel.time_range_bymodel.png', height = 10, width = 10, units = 'cm', dpi = 300)
+#ggsave('./Figures/figS5.png', height = 10, width = 10, units = 'cm', dpi = 300)
+
+
+
+sessionInfo()
+# R version 4.5.2 (2025-10-31)
+# Platform: x86_64-redhat-linux-gnu
+# Running under: Fedora Linux 43 (Workstation Edition)
+# 
+# Matrix products: default
+# BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.1
+# 
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8       
+# [4] LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+# [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                  LC_ADDRESS=C              
+# [10] LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+# 
+# time zone: America/New_York
+# tzcode source: system (glibc)
+# 
+# attached base packages:
+#   [1] parallel  stats     graphics  grDevices datasets  utils     methods   base     
+# 
+# other attached packages:
+#   [1] viridisLite_0.4.3   factoextra_1.0.7    cluster_2.1.8.2     picante_1.8.2      
+# [5] mgcv_1.9-4          nlme_3.1-168        rstatix_0.7.3       ade4_1.7-23        
+# [9] ape_5.8-1           vegan_2.7-2         permute_0.9-10      doMC_1.3.8         
+# [13] iterators_1.0.14    foreach_1.5.2       kableExtra_1.4.0    patchwork_1.3.2    
+# [17] RColorBrewer_1.1-3  cowplot_1.2.0       gridExtra_2.3       waffle_1.0.2       
+# [21] ggforce_0.5.0       plotly_4.12.0       ggpubr_0.6.3        data.table_1.18.2.1
+# [25] lubridate_1.9.5     forcats_1.0.1       stringr_1.6.0       dplyr_1.2.0        
+# [29] purrr_1.2.1         readr_2.2.0         tidyr_1.3.2         tibble_3.3.1       
+# [33] ggplot2_4.0.2       tidyverse_2.0.0     plyr_1.8.9          phyloseq_1.54.2    
+# 
+# loaded via a namespace (and not attached):
+#   [1] rlang_1.1.7         magrittr_2.0.4      otel_0.2.0          compiler_4.5.2     
+# [5] systemfonts_1.3.1   vctrs_0.7.1         reshape2_1.4.5      pkgconfig_2.0.3    
+# [9] crayon_1.5.3        fastmap_1.2.0       backports_1.5.0     XVector_0.50.0     
+# [13] labeling_0.4.3      rmarkdown_2.30      CoprManager_0.5.8   tzdb_0.5.0         
+# [17] xfun_0.56           jsonlite_2.0.0      biomformat_1.38.0   rhdf5filters_1.22.0
+# [21] Rhdf5lib_1.32.0     tweenr_2.0.3        broom_1.0.12        R6_2.6.1           
+# [25] stringi_1.8.7       car_3.1-5           extrafontdb_1.1     Rcpp_1.1.1         
+# [29] Seqinfo_1.0.0       knitr_1.51          extrafont_0.20      IRanges_2.44.0     
+# [33] Matrix_1.7-4        splines_4.5.2       igraph_2.2.2        timechange_0.4.0   
+# [37] tidyselect_1.2.1    rstudioapi_0.18.0   abind_1.4-8         codetools_0.2-20   
+# [41] curl_7.0.0          lattice_0.22-9      Biobase_2.70.0      withr_3.0.2        
+# [45] S7_0.2.1            evaluate_1.0.5      survival_3.8-6      polyclip_1.10-7    
+# [49] xml2_1.5.2          Biostrings_2.78.0   pillar_1.11.1       carData_3.0-6      
+# [53] DT_0.34.0           stats4_4.5.2        generics_0.1.4      S4Vectors_0.48.0   
+# [57] hms_1.1.4           scales_1.4.0        glue_1.8.0          lazyeval_0.2.2     
+# [61] tools_4.5.2         ggsignif_0.6.4      rhdf5_2.54.1        grid_4.5.2         
+# [65] Rttf2pt1_1.3.14     Formula_1.2-5       cli_3.6.5           textshaping_1.0.4  
+# [69] svglite_2.2.2       gtable_0.3.6        digest_0.6.39       BiocGenerics_0.56.0
+# [73] ggrepel_0.9.7       htmlwidgets_1.6.4   farver_2.1.2        htmltools_0.5.9    
+# [77] multtest_2.66.0     lifecycle_1.0.5     multcompView_0.1-11 httr_1.4.8         
+# [81] MASS_7.3-65     

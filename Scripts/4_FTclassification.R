@@ -1,47 +1,109 @@
-#-- Script for the publication:
-#-- Title
-#-- Responsible author: Masumi Stadler
+## -------------------------------------------------------------------------
+##
+## Script name: 4_FTclassification.R
+##
+## Purpose of script: This script is the main script for FT analyses.
+##                    We identify reactive versus unreactive molecular formulae
+##                    using a decision tree.
+##
+##
+## Author: Masumi Stadler
+##
+## Date Finalized: 2024-02-12
+##
+## Copyright (c) Masumi Stadler, 2026
+## Email: m.stadler.jp.at@gmail.com
+##
+## -------------------------------------------------------------------------
+##
+## Notes:  At sections in this script, one moves into scripts
+##         4.1 and 4.2 and then, their outputs are continued to be
+##         analyzed in this script.
+##         The script is written in this way, because some sections
+##         were run on a high-performance computer provided by
+##         Compute Canada.
+##
+## -------------------------------------------------------------------------
 
-#setwd("/home/bioinf/data/Molecular/Masumi/DOM-main")
-# R set-up ----------------------------------------------------------------------------------------------------
-### Packages -------------------------------------------------------------------------------
+## Use R project with regular scripts, all paths are relative 
+
+# Server set-up -----------------------------------------------------------
+## Working directory is set from where the job is submitted
+## Load library path, if on a server
+# .libPaths( c( .libPaths(), "/home/mstadler/projects/def-pauldel/R/x86_64-pc-linux-gnu-library/4.2") )
+
+# R-setup -----------------------------------------------------------------
+## Load Packages -----------------------------------------------------------
 pckgs <- list(
   "data.table", "stringr", "tidyverse", # wrangling
   "plyr",
   "rstatix", "mgcv", #stats 
   "doMC", "foreach", # parallel
   'gridExtra', 'ggpubr','plotly') # plotting
-### Check if packages are installed, output packages not installed:
+
+## Check if packages are installed, output packages not installed:
 (miss.pckgs <- unlist(pckgs)[!(unlist(pckgs) %in% installed.packages()[,"Package"])])
 #if(length(miss.pckgs) > 0) install.packages(miss.pckgs)
-# Many packages have to be installed through Bioconductor, please refer to the package websites
 
-### Load
+## Load
 invisible(lapply(pckgs, library, character.only = T))
 rm(pckgs, miss.pckgs)
 
-### Custom functions -----------------------------------------------------------------------------
-source("./Functions/custom_fun.R")
+## Load custom functions --------------------------------------------------
+funs <- list.files("./Functions", full.names = T)
+invisible(lapply(funs, source))
 
-### Parallel set-up -----------------------------------------------------------------------
-# register number of cores for parallel computing with 'apply' family
-detectCores() # 24 (private PC: 4), we do not have 24 cores. It's 12 cores, 24 threads.
-registerDoMC()
-getDoParWorkers() # 12 (private PC: 2)
+## Other set-up -----------------------------------------------------------
+options(scipen = 6, digits = 4) # view outputs in non-scientific notation
+ 
+## Parallel environment ---------------------------------------------------
+## Server version
+# cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
+# registerDoMC(cores = cores)
 
-# Read data ---------------------------------------------------------------------------------------------------
+## Personal version
+# detectCores(); registerDoMC(); getDoParWorkers()
+# numCores <- detectCores()
+# cl <- makeCluster(numCores, type = "FORK")
+ 
+# Read in data -----------------------------------------------------------
+
 cross <- read.csv("./Data/FT/crosstable2015_cor.csv", sep =",", stringsAsFactors = F)
 cross16 <- read.csv("./Data/FT/crosstable2016_cor.csv", sep =",", stringsAsFactors = F)
 
-# read in matched mother files
-meta15 <- read.csv("./Data/Summary/2015_metadata_upflacc.csv", sep = ",", stringsAsFactors = F)
-meta16 <- read.csv("./Data/Summary/2016_metadata_upflacc.csv", sep = ",", stringsAsFactors = F)
+# # read in matched mother files
+# # we will not be publishing all variables we have sampled
+# # make a selection
+# meta15 <- read.csv("./Data/Summary/2015_metadata_upflacc.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+# meta16 <- read.csv("./Data/Summary/2016_metadata_upflacc.csv", sep = ",", stringsAsFactors = F)%>% setDT()
+# 
+# meta15.all <- read.csv("./Data/Summary/2015_metadata.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+# meta16.all <- read.csv("./Data/Summary/2016_metadata.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+# 
+# # 2015
+# meta15 <- meta15[meta15$sample.name %in% meta15.all$sample.name]
+# 
+# meta15 <- left_join(meta15.all, meta15 %>% dplyr::select(samples, elev_m:snapped_long_tm5), by = "samples")
+# meta15 <- meta15 %>% dplyr::select(samples:sample.type, sample.type.year, Season,
+#                          lat:long, temp.water.ysi,do.cor.perc.ysi, ph.ysi, DOC, bact.abundance, elev_m:snapped_long_tm5)
+# write.table(meta15, "./Data/Summary/2015_metadata_selection.csv", sep = ",", row.names = F)
+# 
+# # 2016
+# meta16 <- meta16[meta16$sample.name %in% meta16.all$sample.name]
+# 
+# meta16 <- left_join(meta16.all, meta16 %>% dplyr::select(samples, elev_m:snapped_long_tm5), by = "samples")
+# meta16 <- meta16 %>% dplyr::select(samples:sample.type, sample.type.year, Season,
+#                                    lat:long, temp.water.ysi,do.cor.perc.ysi, ph.ysi, DOC, bact.abundance, elev_m:snapped_long_tm5)
+# write.table(meta16, "./Data/Summary/2016_metadata_selection.csv", sep = ",", row.names = F)
+
+# read in mother files
+meta15 <- read.csv("./Data/Summary/2015_metadata_selection.csv", sep = ",", stringsAsFactors = F)
+meta16 <- read.csv("./Data/Summary/2016_metadata_selection.csv", sep = ",", stringsAsFactors = F)
 
 meta.all <- read.csv("./Data/Summary/meta_file_traveltime_2024-02-10.csv", sep = ",", stringsAsFactors = F) %>% setDT()
 
-# hist(meta.all[year == 2015,]$travel.time_d)
-# hist(meta.all[year == 2016,]$travel.time_d)
 
+# Format data ------------------------------------------------------------
 # extract only a few samples that we have FT for
 meta <- meta.all[sample.name %in% c(meta15$sample.name, meta16$sample.name),] %>% unique()
 
@@ -141,6 +203,15 @@ out <- out %>% distinct()
 # df[, .(mean = mean(value, na.rm = T)), by = .(variable,  sample.type.year)]
 
 
+# Table S2 ----------------------------------------------------------------
+# Number of samples used to create spatial models of microbial OTUs and DOM MF per campaign
+# make sure we only count those we are using
+temp <- meta[meta$sample.name %in% all.df$sample.name,] %>% setDT()
+# calculate sample size by campaign
+temp <- temp[,.(n = .N), by = .(year, Season)] %>% arrange(year, Season)
+
+write.table(temp,"./Data/Summary/FT_samplesize.csv", sep = ",", row.names = F)
+
 ## Remove outliers -------------------------------------------------------------------------------------------
 # During plotting (later step in this script), a few outliers were detected
 # We apply a function to remove an outlier observation per group
@@ -189,37 +260,21 @@ present <- clean.df[PA == "Present",]
 levels(factor(present$sample.type.year))
 
 ## Define travel time for non estimated habitats ----------------------------------------------------------
-#present <- readRDS(select_newest("./Objects", "presentFT_long"))
-
-#ggplot(present, aes(x = travel.time_d, y = n.obs, colour = sample.type.year)) + geom_point()
-
 present[, travel.time_d := travel.time_days]
-present[sample.type.year == "Soilwater", travel.time_d := -50] #
+present[sample.type.year == "Soilwater", travel.time_d := -50]
 present[sample.type.year == "Groundwater", travel.time_d := -50]
-#present[sample.type.year == "Estuary", travel.time_d := 365]
 
 ## Transform variables and remove zero observations --------------------------------------------------------
-#present[, log.travel.time_d := log10(travel.time_d)]
 present[peak.int == 0, peak.int := NA]
 
-ggplot(present[molecular.formula == "C10H10O10N0S0",], aes(x =travel.time_d, y = peak.int, colour = sample.type.year)) +
+# look at an example distribution along travel time
+ggplot(present[molecular.formula == "C10H10O10N0S0",], 
+       aes(x =travel.time_d, y = peak.int, colour = sample.type.year)) +
   geom_point()
-
-#remove samples with no travel time or season
-#present <- present[!is.na(log.travel.time_d),]
-#present <- present[!is.na(Season),]
-
-# remove some wrongly snapped samples
-#present <- present[flacc_npx != -9999,]
 
 # arrange so that the data frame follows travel time
 # ID is year_campaign_molecular.formula
 present <- present %>% group_by(ID) %>% dplyr::arrange(travel.time_d) %>% setDT()
-
-# save
-# saveRDS(clean.df, paste0("./Objects/allFT_long_", Sys.Date(),".rds"))
-# saveRDS(present, paste0("./Objects/presentFT_long_", Sys.Date(), ".rds"))
-# saveRDS(absent, paste0("./Objects/absentFT_long_", Sys.Date(), ".rds"))
 
 ## Z-Scale -------------------------------------------------------------------------------------------------
 temp <- dcast(present, sample.name ~ molecular.formula, value.var = "peak.int")
@@ -242,12 +297,12 @@ hist(present$n.obs, breaks = seq(0, max(present$n.obs) + 10, 1))
 present <- present[n.obs >= 8,]
 length(unique(levels(factor(present$ID)))) #36193
 
-#saveRDS(present, "./Objects/FT_present.rds")
+#saveRDS(present, paste0("./Objects/FT_present_", Sys.Date(), ".rds"))
 
 ## Randomization approach --------------------------------------------------------------------------------
 # For each ID, shuffle the peak intensity along the x-axis and run regression 999 times
 
-# this is actually a mini version of the full function.
+# this is actually a mini example of the full function.
 # run script 4.1_FT_randomize.R on Compute Canada
 
 # slope.random <- ddply(x, .(ID), function(x) {
@@ -269,6 +324,7 @@ length(unique(levels(factor(present$ID)))) #36193
 #   return(out)
 # }, .parallel = T)
 
+# read in original present data frame
 present <- readRDS("./Objects/FT_present_2024-02-10.rds") %>% setDT()
 # read in results
 out <- readRDS("./Objects/FT_randomization_output_2024-02-10.rds") %>% setDT()
@@ -296,6 +352,7 @@ length(not.working) # 0
 const <- unique(ci[sd == 0 & mean > 0,]$ID)
 length(const) # 0
 
+# Plot a few examples
 set.seed(3)
 exmpl <- sample(unique(present$ID), 20)
 
@@ -315,14 +372,7 @@ for(i in 1:length(exmpl)){
                colour = "tomato", linetype = "dashed") +
     geom_vline(xintercept = ci[ID == exmpl[i] & vars == "slope",]$lower.bound,
                colour = "royalblue", linetype = "dashed")
-  # boxplot with notches indicating 95% Confidence interval
-  # notch <- ggplot(out[ID == exmpl[i],], aes(y = slope, x = 1)) +
-  #   theme_bw() +
-  #   geom_boxplot(fill = "white", colour = "gray50", notch = T, width = 0.5) +
-  #   geom_hline(yintercept = ci[ID == exmpl[i] & vars == "slope",]$upper.bound,
-  #              colour = "tomato", line.type = "dashed") +
-  #   geom_hline(yintercept = ci[ID == exmpl[i] & vars == "slope",]$lower.bound,
-  #              colour = "royalblue", line.type = "dashed")
+  
   # histogram of R2
   r2 <- ggplot(out[ID == exmpl[i],], aes(x = r2)) +
     theme_bw() +
@@ -582,590 +632,44 @@ model.df <- model.df %>% dplyr::select(ID:p.val, min.x:buffer.max, rand.ci.up:co
 write.table(model.df,paste0("./Data/Summary/FT_patterns.classified_", Sys.Date(), ".csv"), sep = ",", row.names = F)
 
 
-# Extra code -------------------------------------------------------------------------------------------------
-# # Get a grasp on proportion of each AU -----------------------------------------------------------------
-# n.au <- model.df[order(AU), .(n = .N), by = .(AU)]
-# 
-# # get groups of AU
-# groups <- n.au$AU
-# 
-# folders<-list.dirs("./Figures/FT_lm_fit/", full.names = F)[-1]
-# groups<-as.vector(groups[!(groups %in% folders)])
-# 
-# # multiple models in one plot -----------------------------------------------------------------------
-# set.seed(3)
-# for(i in 1:length(groups)){
-#   dir.create(paste0("./Figures/FT_lm_fit/", groups[i]))
-#   print(paste0("Plotting models of group: ", groups[i]))
-#   # get all IDs from the same group
-#   temp <- model.df[AU == groups[i],]$ID
-#   
-#   if(length(temp) > 160){
-#     temp <- sample(temp, 160)
-#   }
-#   if(groups[i] == "flat" | groups[i] == "n.s."){
-#     plots <- lapply(model.ls[names(model.ls) %in% temp], function(x){
-#       p <- ggplot()+
-#         theme_bw() +
-#         theme(legend.position = "none") +
-#         geom_point(aes(x = x$raw$x, y = x$raw$y), colour = "gray50", alpha = 0.5) +
-#         geom_point(aes(x = x$binned$x, y = x$binned$y,
-#                        fill = factor(x$binned$n, levels = seq(min(x$binned$n),
-#                                                               max(x$binned$n), 1))),
-#                    size = 5, shape = 21) +
-#         scale_fill_brewer(palette = "RdBu", direction = -1, name = "Sample size") +
-#         #geom_line(aes(x = newd$x, newd$y.pred), colour = "purple") +
-#         labs(subtitle = paste("Model = ", x$model.df$model),
-#              x = "Travel time (d)",
-#              y = "Peak intensity (z-scaled)")
-#       
-#       if(!is.null(x$pks.df)){
-#         if(x$pks.df$no.peak[1] > 0){
-#           p <- p +
-#             geom_point(aes(x = x$pks.df$peak.x, y = x$pks.df$peak.y), colour = "purple", size = 4, shape = 21) +
-#             geom_point(aes(x = x$pks.df$infp.x, y = x$pks.df$infp.y, colour = x$pks.df$closest), size = 2) +
-#             scale_colour_manual(values = c("tomato","skyblue"), name = "Inflection point")
-#         }}
-#       return(p)
-#     })
-#     
-#   } else {
-#     
-#     plots <- lapply(model.ls[names(model.ls) %in% temp], function(x){
-#       newd <- data.frame(x =seq(min(x$raw$x, na.rm = T),max(x$raw$x, na.rm = T), by = 1))
-#       newd$y.pred <- predict(x$model, newd)
-#       p <- ggplot()+
-#         theme_bw() +
-#         theme(legend.position = "none") +
-#         geom_point(aes(x = x$raw$x, y = x$raw$y), colour = "gray50", alpha = 0.5) +
-#         geom_point(aes(x = x$binned$x, y = x$binned$y,
-#                        fill = factor(x$binned$n, levels = seq(min(x$binned$n),
-#                                                               max(x$binned$n), 1))),
-#                    size = 5, shape = 21) +
-#         scale_fill_brewer(palette = "RdBu", direction = -1, name = "Sample size") +
-#         geom_line(aes(x = newd$x, newd$y.pred), colour = "purple") +
-#         labs(subtitle = paste("Model = ", x$model.df$model),
-#              x = "Travel time (d)",
-#              y = "Peak intensity (z-scaled)")
-#       
-#       if(!is.null(x$pks.df)){
-#         if(x$pks.df$no.peak[1] > 0){
-#           p <- p +
-#             geom_point(aes(x = x$pks.df$peak.x, y = x$pks.df$peak.y), colour = "purple", size = 4, shape = 21) +
-#             geom_point(aes(x = x$pks.df$infp.x, y = x$pks.df$infp.y, colour = x$pks.df$closest), size = 2) +
-#             scale_colour_manual(values = c("tomato","skyblue"), name = "Inflection point")
-#         }}
-#       return(p)
-#     })
-#   }
-#   
-#   # Add ID to plot title
-#   named <- mapply(function(x, y){
-#     p <- x + labs(title=y)
-#     return(p)
-#   }, x = plots, y = names(plots), SIMPLIFY = F)
-#   
-#   plot.vec <- seq(from = 1, to = length(named), by = 16)
-#   
-#   # plot 9 models in one plot
-#   for(j in 1:length(plot.vec)){
-#     if(j != length(plot.vec)){
-#       p <- do.call(grid.arrange, named[plot.vec[j]:(plot.vec[j+1]-1)])
-#       ggsave(paste0("./Figures/FT_lm_fit/", groups[i],"/models_", plot.vec[j], "-", (plot.vec[j+1]-1),".pdf"), p,
-#              height = 30, width = 35, units = "cm")
-#     } else {
-#       p <- do.call(grid.arrange, named[plot.vec[j]:length(named)])
-#       ggsave(paste0("./Figures/FT_lm_fit/", groups[i],"/models_", plot.vec[j], "-", length(named),".pdf"), p,
-#              height = 30, width = 35, units = "cm")
-#     }
-#   }
-# }
-
-# GAM: Multi-peakers -------------------------------------------------------------------------------------------
-# df <- pks.df[model.df, , on = .(ID)]
-# df <- df[is.na(AU), ]
-# unique(df$no.peak) # how many peaks 3-5
-# 
-# # Classify generally declining and increasing multi-peakers
-# df[is.na(AU) & no.peak >= 3 & direction == 2, AU := "declining_multimodal"]
-# model.df[ID %in% unique(df[AU == "declining_multimodal",]$ID), AU := "declining_multimodal"]
-# df[is.na(AU) & no.peak >= 3 & direction == 1, AU := "increasing_multimodal"]
-# model.df[ID %in% unique(df[AU == "increasing_multimodal",]$ID), AU := "increasing_multimodal"]
-# 
-# # sanity check
-# df[is.na(AU),] # all classified
-# model.df[is.na(AU),] # all classified
-# 
-# # Check number of models classified into each category
-# model.df[, .(n = .N), by = .(AU)]
-# 
-# # Plot them all ----------------------------------------------------------------------------------------------------------
-# 
-# groups<- c('declining_quadratic', "increasing_quadratic",
-#            'declining_bimodal', "increasing_bimodal",
-#            'declining_multimodal', "increasing_multimodal")
-# 
-# # multiple models in one plot -----------------------------------------------------------------------
-# for(i in 1:length(groups)){
-#   dir.create(paste0("./Figures/MO_lm_fit/", groups[i]))
-#   print(paste0("Plotting models of group: ", groups[i]))
-#   # get all IDs from the same group
-#   temp <- model.df[AU == groups[i],]$ID
-#   if(length(temp) > 500){
-#     temp <- sample(temp, 500)
-#   }
-#   
-#   # plot
-#   plots <- lapply(model.ls[names(model.ls) %in% temp], function(x){
-#     newd <- data.frame(x =seq(min(x$raw$x),max(x$raw$x), by = 1))
-#     newd$y.pred <- predict(x$model, newd)
-#     p <- ggplot()+
-#       theme_bw() +
-#       theme(legend.position = "none") +
-#       geom_line(aes(x = newd$x, newd$y.pred), colour = "purple") +
-#       geom_point(aes(x = x$raw$x, y = x$raw$y), colour = "gray50", alpha = 0.5, size = 3) +
-#       labs(subtitle = paste("Model = ", x$model.df$model),
-#            x = "Log Travel time (d)",
-#            y = "Reads")
-#     
-#     if(!is.null(x$pks.df)){
-#       if(x$pks.df$no.peak[1] > 0){
-#         p <- p +
-#           geom_point(aes(x = x$pks.df$peak.x, y = x$pks.df$peak.y), colour = "purple", shape = 21,size = 4) +
-#           geom_point(aes(x = x$pks.df$infp.x, y = x$pks.df$infp.y, colour = x$pks.df$closest), size = 2, alpha = 0.5)
-#       }}
-#     return(p)
-#   })
-#   
-#   # Add ID to plot title
-#   named <- mapply(function(x, y){
-#     p <- x + labs(title=y)
-#     return(p)
-#   }, x = plots, y = names(plots), SIMPLIFY = F)
-#   
-#   plot.vec <- seq(from = 1, to = length(named), by = 16)
-#   
-#   # plot 16 models in one plot
-#   for(j in 1:length(plot.vec)){
-#     if(j != length(plot.vec)){
-#       p <- do.call(grid.arrange, named[plot.vec[j]:(plot.vec[j+1]-1)])
-#       ggsave(paste0("./Figures/MO_lm_fit/", groups[i],"/models_", plot.vec[j], "-", (plot.vec[j+1]-1),".pdf"), p,
-#              height = 30, width = 35, units = "cm")
-#     } else {
-#       p <- do.call(grid.arrange, named[plot.vec[j]:length(named)])
-#       ggsave(paste0("./Figures/MO_lm_fit/", groups[i],"/models_", plot.vec[j], "-", length(named),".pdf"), p,
-#              height = 30, width = 35, units = "cm")
-#     }
-#   }
-# }
-
-# classify where is the biggest peak among multi-peakers
-# df[is.na(AU), diff.x := abs(shift(peak.x,2) - peak.x), by = .(.id)]
-# df[is.na(AU), diff.y := abs(shift(peak.y,2) - peak.y), by = .(.id)]
-# 
-# df[diff.y]
-# df[.id %in% df[is.na(AU) & no.peak == 2 & diff.y > mean.y & diff.x >= 15 & peak.y <= 0 & direction == 2,]$.id, AU := "2p-decay"]
-# model.df[.id %in% df[AU == "2p-decay",]$.id, AU := "2p-decay"]
-# 
-# df[AU == "2p-unimodal" & diff.y > mean.y & direction == 2,]
-
-#df[.id %in% df[is.na(AU) & no.peak == 2 & diff.x >= 15,]$.id, AU := "quadratic"]
-
-#df[.id %in% df[is.na(AU) & no.peak == 2 & diff.x >= 10,]$.id, AU := "bimodal"]
-#model.df[.id %in% df[AU == "quadratic",]$.id, AU := "quadratic"]
-#model.df[.id %in% df[AU == "bimodal",]$.id, AU := "bimodal"]
-
-# groups<- c('declining_bimodal', "increasing_bimodal",
-#            'declining_multimodal', "increasing_multimodal")
-# 
-# for(i in 1:length(groups)){
-#   dir.create(paste0("./Figures/MO_lm_fit/", groups[i]))
-#   #sub <- model.df[AU == groups[i] & direction == 2,]$.id
-#   sub <- sample(model.df[AU == groups[i],]$.id, 10)
-#   #sub <- model.df[AU == groups[i],]$.id
-#   plots <- lapply(model.ls[names(model.ls) %in% sub], function(x){
-#     newd <- data.frame(x =seq(min(x$raw$x),max(x$raw$x), by = 1))
-#     newd$y.pred <- predict(x$model, newd)
-#     p <- ggplot()+
-#       theme_bw() +
-#       geom_point(aes(x = x$raw$x, y = x$raw$y), colour = "gray50", alpha = 0.5) +
-#       geom_line(aes(x = newd$x, newd$y.pred), colour = "purple") +
-#       labs(title = paste("Model = ", x$model.df$model, "\nDirection = ", x$model.df$direction),
-#            x = "Log Travel time (d)",
-#            y = "Reads")
-#     
-#     if(!is.null(x$pks.df)){
-#       p <- p +
-#         geom_point(aes(x = x$pks.df$peak.x, y = x$pks.df$peak.y), colour = "purple", shape = 21,size = 4) +
-#         geom_point(aes(x = x$pks.df$infp.x, y = x$pks.df$infp.y, colour = x$pks.df$closest), size = 2, alpha = 0.5)
-#     }
-#     return(p)
-#   })
-#   
-#   # save plots
-#   for(j in 1:length(plots)){
-#     ggsave(paste0("./Figures/MO_lm_fit/", groups[i],"/", "GAM_", names(plots)[j],".png"), plots[[j]],
-#            height = 10, width = 10, units = "cm")
-#   }
-#   
-# }
-# 
 
 
 
-# # Explore patterns of AU --------------------------------------------------------------------------------
-# # split seasons
-# model.df <- model.df %>% separate(col = "ID", into = c("Year","Season","MF"), sep = "[_]", remove = F)
-# setDT(model.df)
-# # overall percentage
-# model.df[, n := .N]
-# model.df[, n.au.all := .N, by = .(AU)]
-# model.df[, perc.all := (n.au.all * 100) / n]
+sessionInfo()
+# R version 4.5.2 (2025-10-31)
+# Platform: x86_64-redhat-linux-gnu
+# Running under: Fedora Linux 43 (Workstation Edition)
 # 
-# # sanity check
-# model.df %>% dplyr::select(AU, perc.all) %>% distinct() %>% summarize(sum = sum(perc.all))
+# Matrix products: default
+# BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.1
 # 
-# # overall percentage
-# model.df[, n.camp := .N, by = .(Season)]
-# model.df[, n.au.camp := .N, by = .(AU, Season)]
-# model.df[, perc.camp := (n.au.camp * 100) / n.camp]
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8       
+# [4] LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+# [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                  LC_ADDRESS=C              
+# [10] LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
 # 
-# # sanity check
-# t <- model.df %>% dplyr::select(AU, Season, perc.camp) %>% distinct() %>% arrange(Season, AU)
-# t[, .(sum = sum(perc.camp)), by = .(Season)]
+# time zone: America/New_York
+# tzcode source: system (glibc)
 # 
-# # export table
-# out <- model.df %>% dplyr::select(Season, 
-#                                   AU, perc.all, n.au.all, perc.camp) %>% distinct()
+# attached base packages:
+#   [1] parallel  stats     graphics  grDevices datasets  utils     methods   base     
 # 
-# setDT(out)
+# other attached packages:
+#   [1] plotly_4.12.0       gridExtra_2.3       doMC_1.3.8          mgcv_1.9-4          nlme_3.1-168       
+# [6] rstatix_0.7.3       doParallel_1.0.17   iterators_1.0.14    foreach_1.5.2       ggpubr_0.6.3       
+# [11] plyr_1.8.9          lubridate_1.9.5     forcats_1.0.1       stringr_1.6.0       dplyr_1.2.0        
+# [16] purrr_1.2.1         readr_2.2.0         tidyr_1.3.2         tibble_3.3.1        ggplot2_4.0.2      
+# [21] tidyverse_2.0.0     data.table_1.18.2.1
 # 
-# out[, Season := factor(Season, levels = c("Spring", "Summer"))]
-# # save to merge with FT data
-# write.table(out, "./Data/Summary/AU_perc_overall_ft.csv", sep = ",", row.names = F)
-# 
-# # make a bar plot
-# (p <- ggplot(out) +
-#     theme_bw() +
-#     geom_col(aes(x = Season, y = perc.camp, fill = AU)) +
-#     #geom_text(aes(y = -1.5, label= unique(out$n.by.range), x = unique(out$range)), colour = "gray40", size = 2) +
-#     scale_fill_viridis_d(name = 'Spatial pattern', option = "inferno", direction = -1)+
-#     labs(x = "Season", y = "Percentage of spatial patterns (%)") +
-#     theme(panel.grid = element_blank(),
-#           axis.text.x = element_text(angle = 45, hjust = 1)))
-# ggsave("./Figures/mic_perc.range.pattern.season_DNARNA.png", p, width = 14, height = 10, units = "cm")
-# out.all <- model.df %>% dplyr::select(AU, perc.all) %>% distinct()
-# # continuum
-
-
-# add growth and decay rate -----------------------------------------------------------------------------
-# rate.travtime <- function(x, y, min.x, max.x, break.n){
-#   # remove zeros
-#   temp <- data.frame(x = x, y = y)
-#   #temp <- temp[!is.na(temp$y),]
-#   #temp <- temp[temp$y > 0,]
-#   avg <- mean(temp$x, na.rm = T)
-#   # aggregate
-#   bins <- tapply(temp$y, cut(round(temp$x,0), seq(min.x-1,
-#                                                   max.x+1, by = break.n)), mean, na.rm = TRUE)
-#   
-#   out <- data.frame(y = bins)
-#   setDT(out, keep.rownames = "bins")
-#   out[, bins := str_remove(bins, "[(]")]
-#   out[, bins := str_remove(bins, "[]]")]
-#   out <- separate(out, col = "bins", into = c("start", "end"), sep = ",") %>% setDT()
-#   out[, c('start', 'end') := list(as.numeric(start), as.numeric(end))]
-#   out[, x := rowMeans(.SD), .SDcols = c("start", "end")]
-#   out[is.na(y), y := 0]
-#   
-#   #y <- (out$y /avg)
-#   y <- out$y
-#   x <- out$x
-#   
-#   #apply linear model
-#   lin <- try(lm(y ~ x), silent = T)
-#   
-#   lin.df <- data.frame(lin.intercept = coef(lin)[[1]],
-#                        lin.slope = coef(lin)[[2]],
-#                        lin.p.val = summary(lin)$coefficients[2,4])
-#   return(lin.df)
-# }
-# 
-# # apply on all MF
-# 
-# lin.ls <- dlply(present, .(ID), function(x) {
-#   min.x <- minmax.trav[Season == unique(x$Season) & Year == unique(x$Year),]$min.trav
-#   max.x <-  minmax.trav[Season == unique(x$Season) & Year == unique(x$Year),]$max.trav
-#   
-#   model.ls <- rate.travtime(x$log.travel.time_d, x$peak.int, min.x, max.x, break.n = 2)
-#   
-#   return(model.ls)
-#   
-# }, .parallel = T)
-# 
-# sub.ls <- lin.ls[!is.na(lin.ls)]
-# length(lin.ls) - length(sub.ls) # we loose 21
-
-## Range filter ------------------------------------------------------------------------------------------
-# # remove those with extremely narrow ranges
-# present[peak.int > 0, min.range := min(.SD$travel.time_d), by = .(ID)]
-# present[peak.int > 0, max.range := max(.SD$travel.time_d), by = .(ID)]
-# present[, range.span := max.range - min.range]
-# hist(present$range.span)
-# # we want at least 10
-# hist(present$range.span)
-# # set based on histogram, there are not that many below 10
-# #present <- present[ID %in% present[range.span >= 4,]$ID,]
-# #length(unique(levels(factor(present$ID)))) #17207
-# 
-# # include a filter for distribution of sample sizes across range 
-# 
-# check.bin.n <- function(x){
-#   steps <- unique(x$range.span) / 3
-#   bins <- c(unique(x$min.range), unique(x$min.range) + (steps), unique(x$min.range) + ((steps)*2), 
-#             unique(x$max.range))
-#   n.bins <- c(sum(x$travel.time_d >= bins[1] & x$travel.time_d < bins[2]),
-#     sum(x$travel.time_d >= bins[2] & x$travel.time_d < bins[3]),
-#     sum(x$travel.time_d >= bins[3] & x$travel.time_d <= bins[4]))
-#   
-#   return(any((n.bins >= 2) == F)) # if there are any bins with n < 2, return TRUE
-#   }
-# 
-# present <- present[, bin.check := check.bin.n(.SD), by = .(ID)]
-# length(unique(present$ID)) #36193
-# # apply filter
-# present <- present[bin.check == FALSE,]
-# length(unique(present$ID)) #31810
-# 
-# rm(temp, t, scaled)
-# 
-# # Slope filter --------------------------------------------------------------------------------------------
-# # Run lm on all models and classify those that are slope == 0 as stable even before running model decision tree
-# slope.df <- ddply(present, .(ID), function(x) {
-#   lin <- lm(x$z.peak.int ~ x$log.travel.time_d)
-#   df <- data.frame(slope = lin$coefficients[2])
-#   return(df)
-# }, .parallel = T)
-# 
-# # identify those that have zero slope
-# setDT(slope.df)
-# stable <- slope.df[abs(slope) == 0,]$ID
-# length(stable) # 0
-# #present[ID %in% stable, AU := "stable"]
-# 
-# hist(present$log.travel.time_d) # better distribution than MO, a lot of points in water
-# # go with binned version
-
-# Add rates based on non z-scaled data --------------------------------------------------------------------------------
-# slope.log2 <- ddply(present, .(ID), function(x) {
-#   lin <- lm(x$peak.int ~ log2(x$travel.time_d))
-#   df <- data.frame(slope.log2 = lin$coefficients[2])
-#   return(df)
-# }, .parallel = T)
-# 
-# slope.z.log2 <- ddply(present, .(ID), function(x) {
-#   lin <- lm(x$z.peak.int ~ log2(x$travel.time_d))
-#   df <- data.frame(slope.log2.z = lin$coefficients[2])
-#   return(df)
-# }, .parallel = T)
-# 
-# stat.peaks <- present[, .(mean.peak.int = mean(peak.int, na.rm = T),
-#                           var.peak.int = var(peak.int, na.rm = T),
-#                           median.peak.int = median(peak.int, na.rm = T)), by = .(ID)]
-# 
-# stat.peaks <- stat.peaks[slope.log2, , on = .(ID)]
-# stat.peaks <- stat.peaks[slope.z.log2, , on = .(ID)]
-
-
-# Testing and defining function ---------------------------------------------------------------------------
-
-# temp <- present %>% sample_n(1)
-# test <- present[ID %in% temp$ID,]
-# 
-# # set vectors
-# x <- test$log.travel.time_d
-# y <- test$z.peak.int
-# 
-# # try different models
-# loess.mod <- loess(y ~ x, span = 0.7)
-# lin <- lm(y ~ x)
-# poly.lin <- lm(y ~ poly(x, degree = 2))
-# poly.lin3 <- lm(y ~ poly(x, degree = 3))
-# gam <- mgcv::gam(y ~ x)
-# gam.poly <- mgcv::gam(y ~ s(x))
-# 
-# # predict in shorter intervals
-# frq.x <- seq(min(x),max(x), by = 0.5)
-# newd <- data.frame(x = frq.x)
-# newd$y.loess <- as.numeric(predict(loess.mod, newdata = newd))
-# newd$y.lm <- as.numeric(predict(lin, newdata = newd))
-# newd$y.lmpoly <- as.numeric(predict(poly.lin, newdata = newd))
-# newd$y.lmpoly3 <- as.numeric(predict(poly.lin3, newdata = newd))
-# newd$y.gam <- as.numeric(predict(gam, newdata = newd))
-# newd$y.gampoly <- as.numeric(predict(gam.poly, newdata = newd))
-
-# #plot 
-# ggplot()+
-#   theme_bw() +
-#   geom_point(data = test, aes(x = x, y = y, colour = sample.type.year), alpha = 0.5) +
-#   geom_line(aes(x = newd$x, newd$y.loess), colour = "gray50") +
-#   geom_line(aes(x = newd$x, y = newd$y.lm), colour = "tomato") +
-#   geom_line(aes(x = newd$x, y = newd$y.lmpoly), colour = "gold") +
-#   geom_line(aes(x = newd$x, y = newd$y.lmpoly3), colour = "navy") +
-#   geom_line(aes(x = newd$x, y = newd$y.gam), colour = "pink") +
-#   geom_line(aes(x = newd$x, y = newd$y.gampoly), colour = "purple") +
-#   geom_point(aes(x = newd$x[localMaxima(newd$y.gampoly)],
-#                  y = newd$y.gampoly[localMaxima(newd$y.gampoly)]),colour = "purple", size = 4)
-
-# GAM seems best in terms of smoothness
-# remove unncesseary objects
-# rm(newd, lin, loess.mod, poly.lin, poly.lin3, temp, test, frq.x, x, y, gam , gam.poly)
-# 
-# lin.df <- ldply(lin.ls, function(x){
-#   x
-# })
-# setDT(lin.df)
-# # merge to general model data frame
-# model.df <- model.df[lin.df, , on = c(".id==ID")]
-# cross <- present %>% dplyr::select(molecular.formula, mz:molweight) %>% distinct() %>% setDT()
-# 
-# # extract a few columns
-# 
-# out <- model.df %>% dplyr::select(.id, Year, Season, MF, AU, model.type, mean.y, var.y, dev.expl, p.val, range, 
-#                            lin.intercept:lin.p.val, n:perc.camp) %>% setDT()
-# out <- out[cross, , on = c("MF==molecular.formula")]
-# 
-# write.table(out, "./Data/Summary/cross_AU_FT.csv", sep = ",", dec=  ".", row.names = F)
-
-# P-value correction --------------------------------------------------------------------------------
-# # Check p-value distribution
-# hist(model.df[p.val < 0.1,]$p.val)
-# 
-# # number of models that worked
-# (n <- nrow(model.df[is.na(AU),])) # 31708
-# nrow(model.df) #31810
-# 
-# # create p-value bins
-# p.bins <-  c(min(model.df$p.val, na.rm = T), 0.00001, 0.0001, 0.001, 0.01, 0.05, max(model.df$p.val, na.rm = T))
-# 
-# # theoretical false-positives
-# fp <- round(p.bins * n, 0 )
-# 
-# # number of models positive within each bin
-# ranges <- paste(head(p.bins,-1), p.bins[-1], sep=" - ")
-# freq <- hist(model.df[is.na(AU),]$p.val, breaks = p.bins, include.lowest = T, plot = F)
-# p.freq <- data.frame(range = ranges, frequency = freq$counts, freq.fp = fp[-1]) %>% setDT()
-# p.freq[, freq.diff := frequency - freq.fp]
-# p.freq[, p.bins := c(1:5,NA)]
-# 
-# # sanity check
-# sum(p.freq$frequency) == n # should be TRUE
-# 
-# sum(p.freq[-nrow(p.freq),]$freq.diff)
-# # we keep 6968 models this way
-# 
-# # Identify models to keep
-# model.df <- model.df[order(rank(p.val)),]
-# # separate models that are not included in this
-# out.df <- model.df[!is.na(AU),]
-# 
-# model.df <- model.df[is.na(AU),]
-# model.df[p.val <= 0.00001, p.bins := 1]
-# model.df[p.val > 0.00001 & p.val <= 0.0001, p.bins := 2]
-# model.df[p.val > 0.0001 & p.val <= 0.001, p.bins := 3]
-# model.df[p.val > 0.001 & p.val <= 0.01, p.bins := 4]
-# model.df[p.val > 0.01 & p.val <= 0.05, p.bins := 5]
-# 
-# p.freq <- p.freq[!is.na(p.bins),]
-# 
-# # overwrite p.val of models that didn't pass
-# for(i in 1:nrow(p.freq)){
-#   temp <- model.df[p.bins == p.freq$p.bins[i], head(.SD,p.freq$freq.diff[i])]$ID
-#   model.df[p.bins == p.freq$p.bins[i] & !(ID %in% temp), c("p.cor") :=
-#              list("remove")]
-# }
-# 
-# #sanity check
-# nrow(model.df[p.cor == "remove",]) == sum(p.freq$freq.fp) # should be TRUE
-# 
-# # bind the good and "bad" models back
-# #model.df<-rbind(model.df %>% dplyr::select(-p.bins), out.df)
-# model.df<-rbind(model.df %>% dplyr::select(-c(p.bins)), out.df %>% mutate(p.cor = "NA"))
-# 
-# # save corrected model.df
-# saveRDS(model.df, paste0("./Objects/FT/model.df_FT_scaled.binned_p.corr_", Sys.Date(),".rds"))
-# 
-# rm(p.freq, ranges, freq, out.df)
-
-# Check
-# library(plotly)
-# plot_ly(x = model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease") & model == "y ~ x",]$lm.slope, type = 'histogram')
-# # maybe slope's less than abs(<0.006)
-# # smaller than 0.02
-# 
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease") & model == 'y ~ x',][abs(lm.slope) < 0.008,]$ID
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & var.y < abs(lm.slope),]$ID
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & abs(lm.slope) >= 0.01,]$ID
-# temp <- model.df[!is.na(AU) & p.val < 0.05,][dev.expl <= 0.3,]$ID
-# 
-# 
-# plot_ly(alpha = 0.9) %>%
-#   add_histogram(x = ~lm.slope,
-#                 data = model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease") & model == 'y ~ x',],
-#                 name = "All linear models") %>%
-#   add_histogram(x = ~lm.slope,
-#                 data = model.df[ID %in% temp,], name = "slope > var") %>%
-#   layout(yaxis = list(title = "Frequency")
-#          )
-#   
-# plot_ly(alpha = 0.9) %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease") & model == 'y ~ x',],
-#                 name = "All linear models") %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[ID %in% temp,], name = "slope > var") %>%
-#   layout(yaxis = list(title = "Frequency")
-#   )
-# 
-# plot_ly(data = model.df[p.val < 0.05,], x = ~dev.expl, type = "histogram")
-# 
-# plot_ly(alpha = 0.9) %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[p.val < 0.05,],
-#                 name = "Dev. explained", xaxis = "x1") %>%
-#   add_histogram(x = ~mean.y,
-#                 data = model.df[p.val <0.05,],
-#                 name = "Mean", xaxis = "x2") %>%
-#   layout(yaxis = list(title = "Frequency"),
-#          xaxis = list(side = "bottom", title = "Deviance explained"),
-#          xaxis2 = list(side = 'top', overlaying = "x", title = "Mean")
-#   )
-# 
-# plot_ly(alpha = 0.9) %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[p.val < 0.05 & model == "y ~ x",],
-#                 name = "Linear", xaxis = "x1") %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[p.val < 0.05 & model == "y ~ s(x)",],
-#                 name = "GAM", xaxis = "x1") %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[p.val < 0.05 & model == "y ~ poly(x, 2)",],
-#                 name = "Poly2", xaxis = "x1") %>%
-#   add_histogram(x = ~dev.expl,
-#                 data = model.df[p.val < 0.05 & model == "y ~ poly(x, 3)",],
-#                 name = "Poly3", xaxis = "x1") %>%
-#   layout(yaxis = list(title = "Frequency"),
-#          xaxis = list(side = "bottom", title = "Deviance explained")
-#   )
-# 
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & dev.expl < 0.01,]$ID
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & dev.expl < 0.15 & abs(lm.slope) <= 0.01,]$ID
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & dev.expl < 0.185 & abs(lm.slope) <= 0.01,]$ID
-# 
-# #good?
-# temp <- model.df[!is.na(AU) & p.val < 0.05 & (AU == "increase" | AU == "decrease"),][model == 'y ~ x' & dev.expl >= 0.385 & abs(lm.slope) > 0.01,]$ID
-# 
-
-
-# Visually check classification
-# Looks good, some models seem spurious - update manual correction later on with all other model corrections
+# loaded via a namespace (and not attached):
+#   [1] gtable_0.3.6       htmlwidgets_1.6.4  lattice_0.22-9     tzdb_0.5.0         CoprManager_0.5.8 
+# [6] vctrs_0.7.1        tools_4.5.2        generics_0.1.4     pkgconfig_2.0.3    Matrix_1.7-4      
+# [11] RColorBrewer_1.1-3 S7_0.2.1           lifecycle_1.0.5    compiler_4.5.2     farver_2.1.2      
+# [16] codetools_0.2-20   carData_3.0-6      htmltools_0.5.9    lazyeval_0.2.2     Formula_1.2-5     
+# [21] pillar_1.11.1      car_3.1-5          abind_1.4-8        tidyselect_1.2.1   digest_0.6.39     
+# [26] stringi_1.8.7      labeling_0.4.3     splines_4.5.2      fastmap_1.2.0      grid_4.5.2        
+# [31] cli_3.6.5          magrittr_2.0.4     broom_1.0.12       withr_3.0.2        scales_1.4.0      
+# [36] backports_1.5.0    timechange_0.4.0   httr_1.4.8         ggsignif_0.6.4     hms_1.1.4         
+# [41] viridisLite_0.4.3  rlang_1.1.7        Rcpp_1.1.1         glue_1.8.0         jsonlite_2.0.0    
+# [46] rstudioapi_0.18.0  R6_2.6.1

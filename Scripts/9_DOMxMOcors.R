@@ -2,18 +2,18 @@
 ##
 ## Script name: 9_DOMxMOcors.R
 ##
-## Purpose of script: 
+## Purpose of script: Analyse the correlation matrix between OTU and MF.
 ##
 ## Author: Masumi Stadler
 ##
-## Date Finalized: 
+## Date Finalized: 2024-09-13
 ##
-## Copyright (c) Masumi Stadler, 2025
+## Copyright (c) Masumi Stadler, 2026
 ## Email: m.stadler.jp.at@gmail.com
 ##
 ## -------------------------------------------------------------------------
 ##
-## Notes:
+## Notes: Figures 5, 6 and S9 are being plotted in this script.
 ##
 ##
 ## -------------------------------------------------------------------------
@@ -118,18 +118,23 @@ ggplot(stats.cor, aes(x = paste(Year, Season), y = perc)) +
 # reduce dataset to all correlations that are significant
 cordf <- cordf[pval < 0.05, ]
 
-rm(stats.cor, stats.cor.fdr)
+rm(stats.cor)
 
 #\ Merge with spatial pattern data -----------------------------------------------------------
 # get spatial patterns categorization
-mo <- read.csv("./Data/Summary/MO_patterns.classified_cleaned_2024-02-12.csv", sep = ",", stringsAsFactors = F) %>% setDT()
-#ft <- read.csv("./Data/Summary/FT_patterns.classified_cleaned_2024-02-12.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+mo <- read.csv("./Data/Summary/MO_patterns.classified_cleaned_2024-02-12.csv", 
+               sep = ",", stringsAsFactors = F) %>% setDT()
+ft <- read.csv("./Data/Summary/FT_patterns.classified_cleaned_2024-02-12.csv",
+               sep = ",", stringsAsFactors = F) %>% setDT()
 
-ft <- readRDS("./Objects/ft_cleaned_withclusters.rds")
-#mo <- readRDS("./Objects/mo_cleaned_withphy.rds")
+# Format data -------------------------------------------------------------
+cross <- read.csv("./Data/FT/cross_all_w.clusters.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+#aim <- readRDS("./Objects/ft_cleaned_withclusters.rds")
+# merge ft models and cross table
+ft <- merge(ft, cross, by.x = "MF", by.y = "molecular.formula", all.x = T, all.y = F)
 
 # Add taxonomy
-phy <- readRDS("./Data/phyloseq_otu.tax.samp.phylo_SINA_chapter2.rds")
+phy <- readRDS("./Data/Microbial/phyloseq_otu.tax.samp.phylo_SINA_chapter2.rds")
 tax <- as.data.frame(phyloseq::tax_table(phy))[,1:5] %>% setDT(keep.rownames = "OTU")
 mo[, domain := NULL]
 mo <- mo[tax,, on = .(OTU)]
@@ -160,16 +165,7 @@ ft[, sAU := factor(sAU, levels = c("increase", "non-linear increase", "multimoda
 # remove OTUs that dropped out during modelling exercise
 mo <- mo[!is.na(season),]
 
-# cordf[mo[dna.type == "DNA"], c("dna.nss", "dna.au", "dna.sau", "dna.slope", "dna.range", "mo.bin", "domain",
-#                                "phylum", "class", "rna.rho", "rna.pval") := list(i.c.ns.s, i.minAU, i.sAU, i.lm.slope, i.tt.range,
-#                                                                                  i.bin.cat,
-#                                                                                  i.domain, i.phylum, i.class, i.dr.rho, i.dr.pval), on = .(season, year, OTU)]
-# cordf[ft, c("dom.nss", "dom.au", "dom.sau", "dom.slope", "dom.range","dom.bin", "dom.clust", "dom.order","dom.cat",
-#             "nosc", "dbeo", "mz","aimod","hc","oc") := list(i.c.ns.s, i.minAU, i.sAU, i.lm.slope, i.tt.range,
-#                                                             i.bin.cat, i.cluster, i.order,
-#                                                             i.categories, i.NOSC, i.DBE_O, i.mz, i.AImod, i.HC, i.OC), 
-#       on = .(season, year, MF)]
-
+# merge microbial and DOM data to correlation data frame
 cordf[mo[dna.type == "DNA"], c("dna.nss", "dna.au", "dna.sau", "dna.slope", "dna.range", "mo.bin", "domain",
                                "phylum", "class") := list(i.c.ns.s, i.minAU, i.sAU, i.lm.slope, i.tt.range,
                                                                                  i.bin.cat,
@@ -180,6 +176,7 @@ cordf[ft, c("dom.nss", "dom.au", "dom.sau", "dom.slope", "dom.range","dom.bin", 
                                                             i.categories, i.NOSC, i.DBE_O, i.mz, i.AImod, i.HC, i.OC), 
       on = .(season, year, MF)]
 
+# set factors
 cordf[, dna.au := factor(dna.au,
                          levels = c('increase','unimodal','decrease'))]
 cordf[, dna.end.eco := factor(dna.range, levels = c("soil-mouth","stream-mouth","soil-lake","stream-lake"),
@@ -201,13 +198,14 @@ cordf[is.na(phylum), phylum := "Unclassified"]
 cordf <- cordf[!is.na(dna.au) & !is.na(dom.au),]
 
 # Sanity check: Do the correlations signs and direction of spatial patterns match? --------------
-nrow(cordf) # 2,119,512, significant correlations
+nrow(cordf) # 2,368,307 correlations
 
+# make separate data frames
 sig.cor <- copy(cordf)
 all.cor <- copy(cordf)
 
-# With detailed spatial pattern categories --------------------------------
-#\ Significant dataset - aka reactive -------------------------------------
+# Do the signs of correlation match the spatial pattern we identified earlier? --
+#\ Significant dataset - aka reactive -------------------------------------------
 # Make a subset of those correlations of OTUs and MFs that have a sign. spatial pattern
 sig.cor <- sig.cor[dna.nss == "sig." & dom.nss == "sig.",]
 nrow(sig.cor) # 541,875
@@ -232,6 +230,7 @@ rho.df[, dataset := "sig"]
 #\ With bulk dataset - aka bulk ---------------------------------------------
 all.cor <- copy(cordf)
 nrow(all.cor) # 2,368,307
+# number of all correlations
 
 all.cor[, rho.group := ifelse(rho > 0, "pos", "neg")]
 all.cor[, rho.group := factor(rho.group, levels = c("pos","neg"))]
@@ -246,12 +245,16 @@ df[, perc := n * 100/all.n]
 df[, .(sum = sum(perc)), by = .(dom.sau, dna.sau)]
 sum(df$n) == nrow(all.cor)
 
+# identify positive and negative cors
 df[, rho.group := factor(rho.group, levels = c("pos","neg"))]
 df[, dataset := "all"]
 
+# merge bulk and reactive data set for plotting
 rho.df <- rbind(rho.df, df)
+# make factor
 rho.df[, dataset := factor(dataset, levels = c("all","sig"), labels = c("Bulk", "Reactive"))]
 
+# Plot
 (p <- ggplot(rho.df, aes(x = dataset, y = perc)) +
     theme_custom() +
     theme(legend.position = "bottom") +
@@ -264,7 +267,7 @@ rho.df[, dataset := factor(dataset, levels = c("all","sig"), labels = c("Bulk", 
     labs(x = "Dataset", y = "Percent"))
 p <- annotate_figure(p, top = "Microbial spatial pattern", right = "Molecular spatial pattern")
 
-ggsave("./Figures/Analysis/DOMxMO_correlation_stacked_rho_sAU_byMF.png", p, height = 20, width = 20, units = "cm")
+#ggsave("./Figures/figS9.png", p, height = 20, width = 20, units = "cm")
 
 
 
@@ -272,35 +275,40 @@ ggsave("./Figures/Analysis/DOMxMO_correlation_stacked_rho_sAU_byMF.png", p, heig
 head(cordf)
 hist(cordf$rho)
 
+# define positive and negative cors
 cordf[, rho.group := ifelse(rho > 0, "pos", "neg")]
 cordf[, rho.group := factor(rho.group, levels = c("pos","neg"))]
 
+# make a copy of data frame
 by.all <- copy(cordf)
+# which correlations are between those that have both DNA and DOM significant spatial pattern models?
 by.all <- by.all[dna.nss == "sig." & dom.nss == "sig.",]
+# remove unimodal patterns (difficult to interpret)
 by.all <- by.all[dom.au != "unimodal" & dna.au != "unimodal",]
+# make a identification ID
 by.all[, id := paste(dom.au, dna.au, rho.group)]
 by.all <- by.all[id %in% c('increase increase pos', 'decrease decrease pos',
                            'increase decrease neg', 'decrease increase neg'),]
 
+# count the number of correlations by group combination
 by.all[, n := .N, by = .(rho.group, dna.au, season, year)]
+# count number of correlations by DOM cluster
 rho.df <- by.all[, .(n.all = unique(n),
                      n = .N), by = .(dom.clust, rho.group, dna.au, season, year)]
 rho.df[, perc := n * 100 / n.all]
 # sanity check
 rho.df[, .(sum = sum(perc)), by = .(rho.group, dna.au, season, year)]
+
+# create correlation category identifier
 rho.df[, variable := paste(dna.au, rho.group, sep = ".")]
 rho.df[, variable := factor(variable, levels = c("increase.pos","increase.neg", "decrease.neg", "decrease.pos"),
                             labels = c("Increase - Positive", "Increase - Negative",
                                        "Decrease - Negative", "Decrease - Positive"))]
+# make cluster a level
+rho.df[, dom.clust := factor(dom.clust, levels = c(1:5))]
 total.perc <- copy(rho.df)
-# order.vec <- rho.df[rho.group == "pos" & dna.au == "increase" & dom.clust == "1",]
-# order.vec <- order.vec[order(-perc),]$phylum
-# 
-# rho.df[, phylum := factor(phylum, levels = unique(order.vec))]
-# rho.df[, rho.group := factor(rho.group, levels = c("pos", "neg"),
-#                              labels = c(expression(paste(rho, " > 0")),
-#                                         expression(paste(rho, " < 0"))))]
 
+# plot
 cl.col <- viridisLite::viridis(6, option = "magma", direction = -1)[2:6]
 (p <- ggplot(rho.df, aes(x = perc, y = variable)) +
     theme_custom() +
@@ -322,30 +330,33 @@ cl.col <- viridisLite::viridis(6, option = "magma", direction = -1)[2:6]
           #plot.title = element_text(size = 20, hjust = 0.5),
           strip.text = element_text(colour = "white", size = 14)))
 
-ggsave("./Figures/Analysis/all_rho.group_proportion_clust_seasonal.pdf", p, height = 13, width = 25, units = "cm")
+#ggsave("./Figures/fig5.pdf", p, height = 13, width = 25, units = "cm")
 # For publication this figure's y-axis was edited in Inkscape
 
 
 # Proportion of DOM cluster correlations by phyla -----------------------------------------------------
 by.phy <- copy(cordf)
 
+# get the same sub-dataset as earlier
+# correlations where both DOM and MO spatial patterns are significant
 by.phy <- by.phy[dna.nss == "sig." & dom.nss == "sig.",]
+# remove unimodal
 by.phy <- by.phy[dom.au != "unimodal" & dna.au != "unimodal",]
+# make category
 by.phy[, id := paste(dom.au, dna.au, rho.group)]
 by.phy <- by.phy[id %in% c('increase increase pos', 'decrease decrease pos',
                            'increase decrease neg', 'decrease increase neg'),]
-
-# by.phy <- by.phy[!(phylum %in% c("CSP1-3","FCPU426","Gennatimonadota","Cloacimonadota", "Latescibacterota",
-#                                  "Fibrobacterota", "Methylomirabilota", "Nitrospirota","Deinococcota", "Dependentiae",
-#                                  "Armatimonadota","Desulfobacterota_B", "Firmicutes_C", "Eremiobacterota")),]
+# how many?
 nrow(by.phy) # 258,982
 
+# count number by phyla
 by.phy[, n := .N, by = .(phylum, rho.group, dna.au, season, year)]
 
 by.phy %>% group_by(phylum, rho.group, dna.au, season, year) %>%
   summarise(n = unique(n)) %>% ungroup() %>% summarise(n = sum(n))
 # 258,982
 
+# number of total unique combinations of phylum x dom cluster x cor group, DNA spatial pattern, season and year
 rho.df <- by.phy[, .(n.all = unique(n),
                      n = .N), by = .(phylum, dom.clust, rho.group, dna.au, season, year)]
 rho.df[, perc := n * 100 / n.all]
@@ -359,17 +370,23 @@ rho.df %>% group_by(phylum, rho.group, dna.au, season, year) %>%
   summarise(n = unique(n.all)) %>% ungroup() %>% summarise(n = sum(n))
 # 258,982
 
+# define correlation category groups
 rho.df[, variable := paste(dna.au, rho.group, sep = ".")]
 rho.df[, variable := factor(variable, levels = c("increase.pos","increase.neg", "decrease.neg", "decrease.pos"),
                             labels = c("Increase - Positive", "Increase - Negative",
                                        "Decrease - Negative", "Decrease - Positive"))]
-# Usual bootstrap of the ratio of means using the city data
+
+# Get bootstrapped confidence intervals
 setDF(rho.df)
+# define function
 mean.boot <- function(data, i){
   d <- data[i,]
   return(mean(d))
 }
+
+# set reproducbility seed
 set.seed(3)
+# run boostrapping with 1000 rounds
 boot.df <- ddply(rho.df, .(dom.clust), function(x){
   bo <- boot::boot(x[, "perc", drop = FALSE], mean.boot, R = 1000, stype = "i")
   bo.conf <- boot::boot.ci(bo, conf=0.95, type="bca")
@@ -379,19 +396,23 @@ boot.df <- ddply(rho.df, .(dom.clust), function(x){
              ci.upper = bo.conf$bca[5])
 })
 
+# merge correlation and bootstrapping results
 setDT(rho.df)
 rho.df <- rho.df[boot.df, , on = .(dom.clust)]
 
+# define which are above average, and which are below bootstrapped confidence interval
 rho.df[perc > mean + ci.upper, cat := "above"]
 rho.df[perc < mean - ci.lower, cat := "below"]
 rho.df[is.na(cat), cat := "below"]
 rho.df[cat == "above", cat := season]
 rho.df[, cat := factor(cat, levels = c("Spring","Summer", "below"))]
 
+# total number of current cors
 rho.df %>% group_by(phylum, rho.group, dna.au, season, year) %>%
   summarise(n = unique(n.all)) %>% ungroup() %>% summarise(n = sum(n))
 # 258,982
 
+# how many are above?
 rho.df %>% filter(cat != "below") %>% group_by(phylum, rho.group, dna.au, season, year) %>%
   summarise(n = unique(n.all)) %>% ungroup() %>% summarise(n = sum(n))
 # 79,115
@@ -426,12 +447,10 @@ rho.df[, simp.phy := factor(simp.phy, levels = c("Chloroflexota","Dormibacterota
                                                  "Myxococcota","Methylomirabilota",
                                                  "Nitrospirota",
                                                  "Unclassified"))]
+# remove Unclassified baccis
 rho.df <- rho.df[simp.phy != "Unclassified"]
 
-phy.cons <- rho.df[(variable == "Increase - Positive" & dom.clust %in% c(5)) & perc > mean + ci.upper,.(n = .N), by = .(simp.phy, season, dom.clust)] %>% arrange(n)
-phy.cons$n <- NULL
-phy.cons <- phy.cons %>% distinct()
-
+# Plot
 (p <- ggplot() +
     theme_custom() +
     geom_rect(data = boot.df,
@@ -459,7 +478,16 @@ phy.cons <- phy.cons %>% distinct()
 (p <- annotate_figure(p, top = text_grob("DOM Cluster", size = 14), 
                       right = text_grob("Correlation category", size = 14, rot = -90)))
 
-ggsave("./Figures/Analysis/phyla_dom.clust_percent_season_new.pdf", p, height = 25, width = 25, units = "cm")
+ggsave("./Figures/fig6.pdf", p, height = 25, width = 25, units = "cm")
+# this figure's axes were edited in Inkscapes
+
+# Some calculations to help interpret results ----------------------------------
+
+# what phyla are linked to cluster 5?
+phy.cons <- rho.df[(variable == "Increase - Positive" & dom.clust %in% c(5)) & 
+                     perc > mean + ci.upper,.(n = .N), by = .(simp.phy, season, dom.clust)] %>% arrange(n)
+phy.cons$n <- NULL
+phy.cons <- phy.cons %>% distinct()
 
 
 # calculate number of above average links by phyla and cat
@@ -482,3 +510,54 @@ temp <- rho.df[cat != "below", .(n = .N), by = .(cat, dom.clust, variable, side)
 
 tt <- 
   temp[, .(sum = sum(n)), by = .(cat, variable, side)] %>% arrange(variable, cat, side)
+
+
+
+
+sessionInfo()
+# R version 4.5.2 (2025-10-31)
+# Platform: x86_64-redhat-linux-gnu
+# Running under: Fedora Linux 43 (Workstation Edition)
+# 
+# Matrix products: default
+# BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.1
+# 
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8       
+# [4] LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+# [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                  LC_ADDRESS=C              
+# [10] LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+# 
+# time zone: America/New_York
+# tzcode source: system (glibc)
+# 
+# attached base packages:
+#   [1] parallel  stats     graphics  grDevices datasets  utils     methods   base     
+# 
+# other attached packages:
+#   [1] factoextra_1.0.7    cluster_2.1.8.2     patchwork_1.3.2     RColorBrewer_1.1-3  picante_1.8.2      
+# [6] mgcv_1.9-4          nlme_3.1-168        rstatix_0.7.3       ade4_1.7-23         ape_5.8-1          
+# [11] vegan_2.7-2         permute_0.9-10      doMC_1.3.8          iterators_1.0.14    foreach_1.5.2      
+# [16] kableExtra_1.4.0    cowplot_1.2.0       gridExtra_2.3       waffle_1.0.2        ggforce_0.5.0      
+# [21] plotly_4.12.0       ggpubr_0.6.3        data.table_1.18.2.1 lubridate_1.9.5     forcats_1.0.1      
+# [26] stringr_1.6.0       dplyr_1.2.0         purrr_1.2.1         readr_2.2.0         tidyr_1.3.2        
+# [31] tibble_3.3.1        ggplot2_4.0.2       tidyverse_2.0.0     plyr_1.8.9          phyloseq_1.54.2    
+# 
+# loaded via a namespace (and not attached):
+#   [1] rlang_1.1.7         magrittr_2.0.4      otel_0.2.0          compiler_4.5.2      systemfonts_1.3.1  
+# [6] vctrs_0.7.1         reshape2_1.4.5      pkgconfig_2.0.3     crayon_1.5.3        fastmap_1.2.0      
+# [11] backports_1.5.0     XVector_0.50.0      labeling_0.4.3      rmarkdown_2.30      CoprManager_0.5.8  
+# [16] tzdb_0.5.0          xfun_0.56           jsonlite_2.0.0      biomformat_1.38.0   rhdf5filters_1.22.0
+# [21] Rhdf5lib_1.32.0     tweenr_2.0.3        broom_1.0.12        R6_2.6.1            stringi_1.8.7      
+# [26] boot_1.3-32         car_3.1-5           extrafontdb_1.1     Rcpp_1.1.1          Seqinfo_1.0.0      
+# [31] knitr_1.51          extrafont_0.20      IRanges_2.44.0      Matrix_1.7-4        splines_4.5.2      
+# [36] igraph_2.2.2        timechange_0.4.0    tidyselect_1.2.1    rstudioapi_0.18.0   abind_1.4-8        
+# [41] codetools_0.2-20    curl_7.0.0          lattice_0.22-9      Biobase_2.70.0      withr_3.0.2        
+# [46] S7_0.2.1            evaluate_1.0.5      survival_3.8-6      polyclip_1.10-7     xml2_1.5.2         
+# [51] Biostrings_2.78.0   pillar_1.11.1       carData_3.0-6       DT_0.34.0           stats4_4.5.2       
+# [56] generics_0.1.4      S4Vectors_0.48.0    hms_1.1.4           scales_1.4.0        glue_1.8.0         
+# [61] lazyeval_0.2.2      tools_4.5.2         ggsignif_0.6.4      rhdf5_2.54.1        grid_4.5.2         
+# [66] Rttf2pt1_1.3.14     Formula_1.2-5       cli_3.6.5           textshaping_1.0.4   viridisLite_0.4.3  
+# [71] svglite_2.2.2       gtable_0.3.6        digest_0.6.39       BiocGenerics_0.56.0 ggrepel_0.9.7      
+# [76] htmlwidgets_1.6.4   farver_2.1.2        htmltools_0.5.9     multtest_2.66.0     lifecycle_1.0.5    
+# [81] httr_1.4.8          MASS_7.3-65  

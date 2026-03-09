@@ -1,30 +1,70 @@
-# Run modelling decision tree ---------------------------------------------------------------------------------
+## -------------------------------------------------------------------------
+##
+## Script name: 5.2_MO_modelling.R
+##
+## Purpose of script: This is a decision tree to figure out which model
+##                    fits a particular molecular formula's spatial pattern
+##                    the best.
+##
+## Author: Masumi Stadler
+##
+## Date Finalized: 2024-02-11
+##
+## Copyright (c) Masumi Stadler, 2026
+## Email: m.stadler.jp.at@gmail.com
+##
+## -------------------------------------------------------------------------
+##
+## Notes:      This script is part of the 5_MOclassification.R script,
+##                    however, a dedicated separate script was written
+##                    to run the code on a high performance computer.
+##
+## -------------------------------------------------------------------------
 
-# R set-up ----------------------------------------------------------------------------------------------------
-### Packages -------------------------------------------------------------------------------
+## Use R project with regular scripts, all paths are relative 
+
+# Server set-up -----------------------------------------------------------
+## Working directory is set from where the job is submitted
+## Load library path, if on a server
 .libPaths( c( .libPaths(), "/home/mstadler/projects/def-pauldel/R/x86_64-pc-linux-gnu-library/4.2") )
+
+# R-setup -----------------------------------------------------------------
+## Load Packages -----------------------------------------------------------
 pckgs <- list("data.table", "tidyverse", # wrangling
-              "plyr",
-              "doMC","foreach","mgcv")
-### Check if packages are installed, output packages not installed:
+              "plyr", "mgcv",
+              "doMC","foreach") # change as needed
+
+## Check if packages are installed, output packages not installed:
 (miss.pckgs <- unlist(pckgs)[!(unlist(pckgs) %in% installed.packages()[,"Package"])])
 #if(length(miss.pckgs) > 0) install.packages(miss.pckgs)
-# Many packages have to be installed through Bioconductor, please refer to the package websites
 
-### Load
+## Load
 invisible(lapply(pckgs, library, character.only = T))
 rm(pckgs, miss.pckgs)
 
-### Set up parallel environment ------------------------------------------------------------------------------
+## Load custom functions --------------------------------------------------
+funs <- list.files("./Functions", full.names = T)
+invisible(lapply(funs, source))
+
+## Other set-up -----------------------------------------------------------
+options(scipen = 6, digits = 4) # view outputs in non-scientific notation
+
+## Parallel environment ---------------------------------------------------
+# Server version
 cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
 registerDoMC(cores = cores)
 
-# Read in data ---------------------------------------------------------------------------------------------
-present <- readRDS("./Objects/MO_present.rds") %>% setDT()
-# read in randomization results
-out <- readRDS("./Objects/MO_randomization_output.rds") %>% setDT()
+## Personal version
+# detectCores(); registerDoMC(); getDoParWorkers()
+# numCores <- detectCores()
+# cl <- makeCluster(numCores, type = "FORK")
 
-# Identify IDs for which modelling does not work and remove ------------------------------------------------
+# Read in data -----------------------------------------------------------
+present <- readRDS("./Objects/MO_present_2024-02-10.rds") %>% setDT()
+# read in randomization results
+out <- readRDS("./Objects/MO_randomization_output_2024-02-10.rds") %>% setDT()
+
+# Identify IDs for which modelling does not work and remove --------------
 # First filter, calculate the number of reshuffling that worked for a specific ID
 out <- out %>% distinct() %>% setDT()
 # count the number of runs that did not work
@@ -46,7 +86,7 @@ length(not.working) #532
 present <- present[!(ID %in% not.working),]
 rm(out, check, not.working)
 
-# Define function ---------------------------------------------------------------------------
+# Define function -------------------------------------------------------
 localMaxima <- function(x) {
   # Use -Inf instead if x is numeric (non-integer)
   # Use .Machine$integer.max instead of Inf for integer
@@ -111,7 +151,7 @@ lm.or.gam <- function(x, y) { #, min.x, max.x
     x <- df$x
     n <- df$n
     
-    # model decision tree start --------------------------------------------------------
+    # model decision tree start --------------------------------------
     lin <- try(gam(y ~ x, weights = n/mean(n)), silent = T)
     
     if (!inherits(lin, "try-error") & !is.na(coef(lin)[[2]]) & sd(y) != 0) {
@@ -181,12 +221,12 @@ lm.or.gam <- function(x, y) { #, min.x, max.x
       # if even the linear model doesn't work return NA
       model <- NA
     }
-    # model decision tree finish -------------------------------------------------------
+    # model decision tree finish -------------------------------------
   } else {model <- NA}
   if (length(model) > 1L) {
     # if a real model was returned do...
     # we have our best model now, extract coefficients and get peak values
-    # model peak extraction start -----------------------------------------------------
+    # model peak extraction start ------------------------------------
     if (grepl("s(", deparse(formula(model)), fixed = T) |
         grepl("poly(", deparse(formula(model)), fixed = T)) {
       # if GAM or poly then do ...
@@ -241,9 +281,9 @@ lm.or.gam <- function(x, y) { #, min.x, max.x
         )
       }
     }
-    # model peak extraction end ------------------------------------------------------
+    # model peak extraction end -----------------------------------------
     
-    # get model coefficients depending on the model used -----------------------------
+    # get model coefficients depending on the model used ----------------
     if (grepl("s(", deparse(formula(model)), fixed = T)) {
       # gather final output for GAM
       model.df <- data.frame(
@@ -334,13 +374,13 @@ lm.or.gam <- function(x, y) { #, min.x, max.x
   return(model.ls)
 }
 
-# Apply function ----------------------------------------------------------------------------
+# Apply function ---------------------------------------------------------
 model.ls <- dlply(present, .(ID), function(x) {
   model.ls <- lm.or.gam(x$travel.time_d, x$z.reads) 
   return(model.ls)
 }, .parallel = T)
 
-# Extract results --------------------------------------------------------------------------
+# Extract results --------------------------------------------------------
 # get model stats data frame
 model.df <- ldply(model.ls, function(x){
   x$model.df
@@ -351,7 +391,7 @@ pks.df <- ldply(model.ls, function(x){
   x$pks.df
 }) %>% setDT()
 
-# Save ------------------------------------------------------------------------------------
+# Save --------------------------------------------------------------------
 saveRDS(model.ls, paste0("./Objects/MO_model.ls_binned_", Sys.Date(),".rds"))
 saveRDS(model.df, paste0("./Objects/MO_model.df_binned_", Sys.Date(),".rds"))
 saveRDS(pks.df, paste0("./Objects/MO_pks.df_binned_", Sys.Date(),".rds"))

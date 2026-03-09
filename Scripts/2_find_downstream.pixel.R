@@ -8,16 +8,15 @@
 ##
 ## Author: Masumi Stadler
 ##
-## Date Finalized: 11/3/2025
+## Date Finalized: 2025-03-11
 ##
-## Copyright (c) Masumi Stadler, 2025
+## Copyright (c) Masumi Stadler, 2026
 ## Email: m.stadler.jp.at@gmail.com
 ##
 ## -------------------------------------------------------------------------
 ##
 ## Notes: Be careful, depending on the year being processed, uncomment or
 ##        re-comment lines of code.
-##
 ##
 ## -------------------------------------------------------------------------
 
@@ -559,17 +558,16 @@ length(lakes.trib) # lakes with trib identified = 407
 no.trib <- unique(out[buf.lake_id != "0" ,][!(buf.lake_id %in% lakes.trib),]$buf.lake_id)
 length(no.trib) #1058
 
-#setup parallel backend to use many processors
-cores <- detectCores()
-cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
-#registerDoParallel(cl)
-registerDoSNOW(cl)
-# prep progressbar
-pb <- txtProgressBar(max = length(no.trib), style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
+# #setup parallel backend to use many processors
+# cores <- detectCores()
+# cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
+# #registerDoParallel(cl)
+# registerDoSNOW(cl)
+# # prep progressbar
+# pb <- txtProgressBar(max = length(no.trib), style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
 
-#length(no.trib)
 # for all lakes that do not have a tributary yet, do...
 tribs <-foreach(i = 1:length(no.trib), .combine=c, .options.snow = opts) %dopar% {
   # get the reaches that flow into lake
@@ -605,8 +603,8 @@ tribs <-foreach(i = 1:length(no.trib), .combine=c, .options.snow = opts) %dopar%
 
   return(tribs)
 }
-close(pb)
-stopCluster(cl)
+# close(pb)
+# stopCluster(cl)
 
 out[pointid %in% tribs, flag_lake.trib := 1]
 
@@ -633,20 +631,16 @@ tribs <- unique(out[flag_lake.trib == 1 & flag_skip != 1,]$pointid)
 # saveRDS(out, "./Data/Traveltime/out_2016.rds")
 
 # until 500 ok
-#setup parallel backend to use many processors
-cores <- detectCores()
-cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
-#registerDoParallel(cl)
-registerDoSNOW(cl)
-# prep progressbar
-pb <- txtProgressBar(max = length(tribs), style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
+# #setup parallel backend to use many processors
+# cores <- detectCores()
+# cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
+# #registerDoParallel(cl)
+# registerDoSNOW(cl)
+# # prep progressbar
+# pb <- txtProgressBar(max = length(tribs), style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
 
-# 2112
-# time.out <- c()
-# fill.paths <- data.frame()
-#length(no.trib)
 # for all lakes that do not have a tributary yet, do...
 fill.tribs <-foreach(i = 1:length(tribs),
                      .combine='rbind', .multicombine=TRUE,
@@ -732,9 +726,8 @@ fill.tribs <-foreach(i = 1:length(tribs),
   return(list(df, time.out))
   #fill.tribs[[i]] <- list(df, time.out)
 }
-close(pb)
-stopCluster(cl)
-
+# close(pb)
+# stopCluster(cl)
 saveRDS(fill.tribs, "./Objects/tributary_fill_2015.rds")
 
 #fill.tribs <- readRDS("./Objects/tributary_fill_2017.rds")
@@ -852,12 +845,12 @@ all.wb[!(all.wb %in% out[pointid %in% inlets,]$buf.lake_id)]
 # for all inlets, find points until outlet = main channel
 ins <- unique(out[flag_lake.in == 1,]$pointid)
 
-cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
-registerDoSNOW(cl)
-
-pb <- txtProgressBar(max = length(ins), style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-opts <- list(progress = progress)
+# cl <- makeCluster(cores[1]-1) #not to overload your computer # outfile=""
+# registerDoSNOW(cl)
+# 
+# pb <- txtProgressBar(max = length(ins), style = 3)
+# progress <- function(n) setTxtProgressBar(pb, n)
+# opts <- list(progress = progress)
 
 t <- foreach(i = 1:length(ins), .combine=rbind, .options.snow = opts) %dopar% {
  #for(i in 1:length(ins)){
@@ -881,8 +874,8 @@ t <- foreach(i = 1:length(ins), .combine=rbind, .options.snow = opts) %dopar% {
   #t <- rbind(t, df)
  return(df)
 }
-close(pb)
-stopCluster(cl)
+# close(pb)
+# stopCluster(cl)
 
 # merge, make sure that the main channel path has the same ID as the corresponding lake
 out[t, c("buf.lake_id", "flag_main.chan", "main.chan.n") := list(i.buf.lake_id, 1, i.n), on = c('pointid==path')]
@@ -932,7 +925,7 @@ saveRDS(out, "./Objects/cleaned_streamnet_2015.rds")
 # sanity check
 st15 <- readRDS("./Objects/cleaned_streamnet_2015.rds")
 st16 <- readRDS("./Objects/cleaned_streamnet_2016.rds")
-st17 <- readRDS("./Objects/cleaned_streamnet_2017.rds")
+#st17 <- readRDS("./Objects/cleaned_streamnet_2017.rds")
 
 # merge
 temp <- merge(st15 %>% dplyr::select(pointid, next.pixel, buf.lake_id),
@@ -996,7 +989,7 @@ main.chan[, flag_main.chan := 1]
 out <- out[main.chan, c("veloc_px_ms", "wrt_px_min") := list(veloc.px18_ms, i.wrt.px18_min), on = .(buf.lake_id, flag_main.chan)]
 
 # Add reservoir data
-res.wrt <- read.csv("./Output/reservoir_wrt_seasonal_perpixel_2024-02-01.csv", sep = ",", stringsAsFactors = F) %>% setDT()
+res.wrt <- read.csv("./Data/Summary/reservoir_wrt_seasonal_perpixel_2024-02-01.csv", sep = ",", stringsAsFactors = F) %>% setDT()
 
 # will just try one year, one month first
 temp <- res.wrt %>% dplyr::select(Reservoir:month,wrt_d)
@@ -1147,3 +1140,38 @@ rm(test, final, out, streamnet_pnts, temp, res.wrt, main.chan, hydrolakes)
 # # include options = c("TFW=YES") to create auxiliary files needed to read the raster in ArcMap
 # 
 # # Done!
+
+sessionInfo()
+# R version 4.5.2 (2025-10-31)
+# Platform: x86_64-redhat-linux-gnu
+# Running under: Fedora Linux 43 (Workstation Edition)
+# 
+# Matrix products: default
+# BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.1
+# 
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8    
+# [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8       LC_NAME=C                 
+# [9] LC_ADDRESS=C               LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+# 
+# time zone: America/New_York
+# tzcode source: system (glibc)
+# 
+# attached base packages:
+#   [1] parallel  stats     graphics  grDevices datasets  utils     methods   base     
+# 
+# other attached packages:
+#   [1] doParallel_1.0.17   iterators_1.0.14    foreach_1.5.2       ggpubr_0.6.3        plyr_1.8.9         
+# [6] lubridate_1.9.5     forcats_1.0.1       stringr_1.6.0       dplyr_1.2.0         purrr_1.2.1        
+# [11] readr_2.2.0         tidyr_1.3.2         tibble_3.3.1        ggplot2_4.0.2       tidyverse_2.0.0    
+# [16] data.table_1.18.2.1
+# 
+# loaded via a namespace (and not attached):
+#   [1] gtable_0.3.6       ggsignif_0.6.4     compiler_4.5.2     tidyselect_1.2.1   Rcpp_1.1.1        
+# [6] scales_1.4.0       R6_2.6.1           generics_0.1.4     Formula_1.2-5      backports_1.5.0   
+# [11] car_3.1-5          pillar_1.11.1      RColorBrewer_1.1-3 tzdb_0.5.0         rlang_1.1.7       
+# [16] broom_1.0.12       stringi_1.8.7      S7_0.2.1           timechange_0.4.0   cli_3.6.5         
+# [21] withr_3.0.2        magrittr_2.0.4     grid_4.5.2         rstudioapi_0.18.0  CoprManager_0.5.8 
+# [26] hms_1.1.4          lifecycle_1.0.5    vctrs_0.7.1        rstatix_0.7.3      glue_1.8.0        
+# [31] farver_2.1.2       codetools_0.2-20   abind_1.4-8        carData_3.0-6      tools_4.5.2       
+# [36] pkgconfig_2.0.3

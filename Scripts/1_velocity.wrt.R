@@ -5,13 +5,17 @@
 ## Purpose of script: We will establish models to predict velocity and discharge
 ##                    across the entire watershed. Extract WRT for each pixel
 ##                    in the watershed, which reflects different ecosystems.
-##                    E.g. reseroirs versus fluvial.
+##                    E.g. reservoirs versus fluvial.
+##                    NOTE: Data from reservoir discharge is not made available
+##                          as it belongs to our industry partner.
+##                          Processing code is included here for transparency but is
+##                          commented out.
 ##
 ## Author: Masumi Stadler
 ##
-## Date Finalized: 11/03/2025
+## Date Finalized: 2025-03-11
 ##
-## Copyright (c) Masumi Stadler, 2025
+## Copyright (c) Masumi Stadler, 2026
 ## Email: m.stadler.jp.at@gmail.com
 ##
 ## -------------------------------------------------------------------------
@@ -19,6 +23,7 @@
 ## Notes: None of the data are made available due to confidentiality
 ##        request from Hydro-Quebec. Hence, the script is provided for the sake
 ##        of transparency. Some data may be made available upon request.
+##        Figures S1 and S2 are being plotted in this script.
 ##
 ##
 ## -------------------------------------------------------------------------
@@ -105,159 +110,160 @@ rest <- meta[!(sample.name %in% main$sample.name),]
 # new coordinates of snapped locations were extracted
 
 # Reservoir residence time ----------------------------------------------------------------------------------------
-# Now we need to estimate the Water Residence Time within the reservoirs
-# Warning: Data not made available
+# # Now we need to estimate the Water Residence Time within the reservoirs
+# # Warning: Data not made available
+# # This script is included for transparency, but we will only published summarized water data
+# 
+# # Volume from water level (HQ)
+# # We have a water level to volume and surface area conversion table from HQ
+# wat.key <- rbind(read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 3, skip = 5) %>% mutate(Reservoir = "RO1"),
+#                  read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 4, skip = 5) %>% mutate(Reservoir = "RO2"),
+#                  read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 5, skip = 5) %>% mutate(Reservoir = "RO3"))
+# 
+# # rename column names
+# colnames(wat.key) <- c("niveau_m","volume_hm3", "area_km2","comments","Reservoir")
+# 
+# # In order to convert the high resolution (daily) water level data we have from each reservoir to volume numbers,
+# # we have to generate models
+# 
+# # plot water level ~ volume relationship (needed for residence time)
+# ggplot(wat.key, aes(x = niveau_m, y = volume_hm3)) +
+#   geom_point() +
+#   facet_wrap(.~Reservoir, scale = "free") +
+#   geom_smooth(method = "gam")
+# 
+# # plot water level ~ surface area relationship
+# ggplot(wat.key, aes(x = niveau_m, y = area_km2)) +
+#   geom_point() +
+#   facet_wrap(.~Reservoir, scale = "free") +
+#   geom_smooth(method = "gam")
+# 
+# # Relationships are non linear for all reservoirs for both volume and surface area
+# 
+# # make regression for water level ~ volume (GAM) for each reservoir
+# wat.gams <- dlply(wat.key, .(Reservoir), function(x){
+#   gam.mod <- gam(formula = volume_hm3 ~ s(niveau_m, bs = "cs"), data = x)
+# })
+# 
+# # make regression for water level ~ surface area (GAM) for each reservoir
+# area.gams <- dlply(wat.key, .(Reservoir), function(x){
+#   gam.mod <- gam(formula = area_km2 ~ s(niveau_m, bs = "cs"), data = x)
+# })
+# 
+# plot(wat.gams[[1]]);plot(wat.gams[[2]]);plot(wat.gams[[3]])
+# plot(area.gams[[1]]);plot(area.gams[[2]]);plot(area.gams[[3]])
+# 
+# # read in daily measurements of water level across all reservoirs
+# wat.lev <- read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 7, skip = 5,
+#                       col_types = c("date","numeric","numeric","numeric","numeric"))
+# colnames(wat.lev) <- c("Date","RO1","RO2","RO3","RO4")
+# setDT(wat.lev)
+# 
+# # melt into long format
+# wat.lev <- melt.data.table(wat.lev, id.vars = "Date", value.name = "niveau_m", variable.name = "Reservoir")
+# wat.lev <- wat.lev[!is.na(niveau_m),]
+# 
+# # predict volume
+# wat.lev[Reservoir == "RO1", volume_hm3 := predict.gam(wat.gams[[1]], newdata = wat.lev[Reservoir == "RO1",])]
+# wat.lev[Reservoir == "RO2", volume_hm3 := predict.gam(wat.gams[[2]], newdata = wat.lev[Reservoir == "RO2",])]
+# wat.lev[Reservoir == "RO3", volume_hm3 := predict.gam(wat.gams[[3]], newdata = wat.lev[Reservoir == "RO3",])]
+# 
+# # predict area
+# wat.lev[Reservoir == "RO1", area_km2 := predict.gam(area.gams[[1]], newdata = wat.lev[Reservoir == "RO1",])]
+# wat.lev[Reservoir == "RO2", area_km2 := predict.gam(area.gams[[2]], newdata = wat.lev[Reservoir == "RO2",])]
+# wat.lev[Reservoir == "RO3", area_km2 := predict.gam(area.gams[[3]], newdata = wat.lev[Reservoir == "RO3",])]
+# 
+# # Plot predicted volume and surface area from water level
+# ggplot(wat.lev[Reservoir != "RO4",], aes(x = niveau_m, y = volume_hm3)) +
+#   theme_bw() +
+#   geom_point(colour = 'grey20') +
+#   facet_wrap(.~Reservoir, scale = "free") +
+#   labs(x = "Water level (m)", y = expression(paste("Volume (hm"^3,")")))
+# 
+# ggplot(wat.lev, aes(x = niveau_m, y = area_km2)) +
+#   geom_point() +
+#   facet_wrap(.~Reservoir, scale = "free")
+# 
+# # some negative values in RO1 (close to minimum 52 m), overwrite with 0
+# wat.lev[Reservoir == "RO1" & volume_hm3 < 0, volume_hm3 := 0]
+# 
+# # calculate mean volume by month, for years when the reservoir is actually flooded
+# # 2015: RO2
+# # 2016: RO2 > RO1
+# # 2017 & 2018: RO3 > RO2 > RO1
+# wat.lev[, year := year(Date)]
+# wat.lev[, month := month(Date)]
+# 
+# wat.lev <- rbind(wat.lev[Reservoir == "RO2" & year >=2015,],
+#       wat.lev[Reservoir == "RO1" & year >=2016,],
+#       wat.lev[Reservoir == "RO3" & year >=2017,])
+# 
+# # Remove first month of when RO3 was being flooded (too low values)
+# # other reservoirs' flooding period where not recorded
+# wat.lev <- wat.lev[!(Reservoir == "RO3" & year == 2017 & month ==5),]
+# 
+# wat.lev[, month.f := factor(month, levels = 1:12)]
+# (p <- ggplot(wat.lev, aes(x = Date, y = niveau_m, colour = month.f)) +
+#   theme_bw() +
+#   geom_point() +
+#   facet_wrap(.~Reservoir, scale = "free_y") +
+#   scale_colour_viridis_d(name = "Month") +
+#   labs(y = "Water level (m)"))
+# 
+# #ggsave("./Figures/Methods/wat.lev_RO_timeseries.png", p, height = 9, width =25, units = "cm")
+# 
+# # calculate means for each year-month
+# sum.wat <- wat.lev[, .(mean.vol_hm3 = mean(volume_hm3, na.rm = T),
+#                        mean.area_km2 = mean(area_km2, na.rm = T)), by = .(Reservoir, year, month)]
+# 
+# sum.wat[, .(mean.vol_m3 = mean(mean.vol_hm3) * 1000000), by = .(Reservoir, month)]
 
-# Volume from water level (HQ)
-# We have a water level to volume and surface area conversion table from HQ
-wat.key <- rbind(read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 3, skip = 5) %>% mutate(Reservoir = "RO1"),
-                 read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 4, skip = 5) %>% mutate(Reservoir = "RO2"),
-                 read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 5, skip = 5) %>% mutate(Reservoir = "RO3"))
-
-# rename column names
-colnames(wat.key) <- c("niveau_m","volume_hm3", "area_km2","comments","Reservoir")
-
-# In order to convert the high resolution (daily) water level data we have from each reservoir to volume numbers,
-# we have to generate models
-
-# plot water level ~ volume relationship (needed for residence time)
-ggplot(wat.key, aes(x = niveau_m, y = volume_hm3)) +
-  geom_point() +
-  facet_wrap(.~Reservoir, scale = "free") +
-  geom_smooth(method = "gam")
-
-# plot water level ~ surface area relationship
-ggplot(wat.key, aes(x = niveau_m, y = area_km2)) +
-  geom_point() +
-  facet_wrap(.~Reservoir, scale = "free") +
-  geom_smooth(method = "gam")
-
-# Relationships are non linear for all reservoirs for both volume and surface area
-
-# make regression for water level ~ volume (GAM) for each reservoir
-wat.gams <- dlply(wat.key, .(Reservoir), function(x){
-  gam.mod <- gam(formula = volume_hm3 ~ s(niveau_m, bs = "cs"), data = x)
-})
-
-# make regression for water level ~ surface area (GAM) for each reservoir
-area.gams <- dlply(wat.key, .(Reservoir), function(x){
-  gam.mod <- gam(formula = area_km2 ~ s(niveau_m, bs = "cs"), data = x)
-})
-
-plot(wat.gams[[1]]);plot(wat.gams[[2]]);plot(wat.gams[[3]])
-plot(area.gams[[1]]);plot(area.gams[[2]]);plot(area.gams[[3]])
-
-# read in daily measurements of water level across all reservoirs
-wat.lev <- read_excel("./Data/Hydrology/Water_level_HQ_21July2020.xlsx", sheet = 7, skip = 5,
-                      col_types = c("date","numeric","numeric","numeric","numeric"))
-colnames(wat.lev) <- c("Date","RO1","RO2","RO3","RO4")
-setDT(wat.lev)
-
-# melt into long format
-wat.lev <- melt.data.table(wat.lev, id.vars = "Date", value.name = "niveau_m", variable.name = "Reservoir")
-wat.lev <- wat.lev[!is.na(niveau_m),]
-
-# predict volume
-wat.lev[Reservoir == "RO1", volume_hm3 := predict.gam(wat.gams[[1]], newdata = wat.lev[Reservoir == "RO1",])]
-wat.lev[Reservoir == "RO2", volume_hm3 := predict.gam(wat.gams[[2]], newdata = wat.lev[Reservoir == "RO2",])]
-wat.lev[Reservoir == "RO3", volume_hm3 := predict.gam(wat.gams[[3]], newdata = wat.lev[Reservoir == "RO3",])]
-
-# predict area
-wat.lev[Reservoir == "RO1", area_km2 := predict.gam(area.gams[[1]], newdata = wat.lev[Reservoir == "RO1",])]
-wat.lev[Reservoir == "RO2", area_km2 := predict.gam(area.gams[[2]], newdata = wat.lev[Reservoir == "RO2",])]
-wat.lev[Reservoir == "RO3", area_km2 := predict.gam(area.gams[[3]], newdata = wat.lev[Reservoir == "RO3",])]
-
-# Plot predicted volume and surface area from water level
-ggplot(wat.lev[Reservoir != "RO4",], aes(x = niveau_m, y = volume_hm3)) +
-  theme_bw() +
-  geom_point(colour = 'grey20') +
-  facet_wrap(.~Reservoir, scale = "free") +
-  labs(x = "Water level (m)", y = expression(paste("Volume (hm"^3,")")))
-
-ggplot(wat.lev, aes(x = niveau_m, y = area_km2)) +
-  geom_point() +
-  facet_wrap(.~Reservoir, scale = "free")
-
-# some negative values in RO1 (close to minimum 52 m), overwrite with 0
-wat.lev[Reservoir == "RO1" & volume_hm3 < 0, volume_hm3 := 0]
-
-# calculate mean volume by month, for years when the reservoir is actually flooded
-# 2015: RO2
-# 2016: RO2 > RO1
-# 2017 & 2018: RO3 > RO2 > RO1
-wat.lev[, year := year(Date)]
-wat.lev[, month := month(Date)]
-
-wat.lev <- rbind(wat.lev[Reservoir == "RO2" & year >=2015,],
-      wat.lev[Reservoir == "RO1" & year >=2016,],
-      wat.lev[Reservoir == "RO3" & year >=2017,])
-
-# Remove first month of when RO3 was being flooded (too low values)
-# other reservoirs' flooding period where not recorded
-wat.lev <- wat.lev[!(Reservoir == "RO3" & year == 2017 & month ==5),]
-
-wat.lev[, month.f := factor(month, levels = 1:12)]
-(p <- ggplot(wat.lev, aes(x = Date, y = niveau_m, colour = month.f)) +
-  theme_bw() +
-  geom_point() +
-  facet_wrap(.~Reservoir, scale = "free_y") +
-  scale_colour_viridis_d(name = "Month") +
-  labs(y = "Water level (m)"))
-
-#ggsave("./Figures/Methods/wat.lev_RO_timeseries.png", p, height = 9, width =25, units = "cm")
-
-# calculate means for each year-month
-sum.wat <- wat.lev[, .(mean.vol_hm3 = mean(volume_hm3, na.rm = T),
-                       mean.area_km2 = mean(area_km2, na.rm = T)), by = .(Reservoir, year, month)]
-
-sum.wat[, .(mean.vol_m3 = mean(mean.vol_hm3) * 1000000), by = .(Reservoir, month)]
-
-# 1. Read bathymetry data -----------------------------------------------------------------------------------------
-# Files generated in ArcMap using the bathymetry raster files provided by HQ
-# Volume was derived via "Surface volume" tool in 3D Analyst toolbox
-# Other statistics such as number of pixels in reservoir were calculated using "Zonal Statistics as Table" using the
-# Reservoir shape files provided by HQ
-
-b.stats <- list.files("./Data/Hydrology/", pattern = "bathy_stats")
-vol.files <- list.files("./Data/Hydrology/", pattern = "bathy_vol")
-
-# ignore warnings
-b.df<-lapply(paste0("./Data/Hydrology/",b.stats), read.table, header = T, sep = ",", stringsAsFactors = F) # gives warnings but that's ok
-b.df <- bind_rows(b.df)
-b.df$Reservoir <- sapply(strsplit(b.stats, split = "\\_|\\."),"[",3)
-
-vol.df<-lapply(paste0("./Data/Hydrology/",vol.files), read.table, header = T, sep = ",", stringsAsFactors = F)
-vol.df <- bind_rows(vol.df)
-vol.df$Reservoir <- sapply(strsplit(vol.files, split = "\\_|\\."),"[",3)
-
-# Rename columns
-vol.df <- vol.df %>% dplyr::select(Reservoir,
-                         water.lev_m = Plane_Height,
-                         volume_m3 = Volume)
-
-b.df <- b.df %>% dplyr::select(Reservoir,
-                               pxl_no = COUNT,
-                               area_m2 = AREA,
-                               max.depth_m = MAX,
-                               min.depth_m = MIN,
-                               mean.depth_m = MEAN,
-                               std.depth_m = STD)
-
-setDT(vol.df); setDT(b.df)
-# merge
-res.stats <- b.df[vol.df, , on = .(Reservoir)]
-
-# convert to hm3 to compare with predicted data
-res.stats[, volume_hm3 := volume_m3 * 0.000001]
-# convert to km2 to compare with predicted data
-res.stats[, area_km2 := area_m2 * 0.000001]
-# remove unnecessary objects
-rm(vol.df, b.df, vol.files, b.stats)
-
-sum.wat[res.stats, c("gis.volume_hm3","gis.area_km2","gis.pxl_no") := list(i.volume_hm3,
-                                                              i.area_km2, i.pxl_no), on = .(Reservoir)]
-rm(area.gams, wat.gams, wat.key, wat.lev, p, res.stats, main, meta, rest)
-#sum.wat[, pxl_no := mean.area_km2 / (0.018*0.018)] # Pixel size is 18 m x 18 m
+# # 1. Read bathymetry data -----------------------------------------------------------------------------------------
+# # Files generated in ArcMap using the bathymetry raster files provided by HQ
+# # Volume was derived via "Surface volume" tool in 3D Analyst toolbox
+# # Other statistics such as number of pixels in reservoir were calculated using "Zonal Statistics as Table" using the
+# # Reservoir shape files provided by HQ
+# 
+# b.stats <- list.files("./Data/Hydrology/", pattern = "bathy_stats")
+# vol.files <- list.files("./Data/Hydrology/", pattern = "bathy_vol")
+# 
+# # ignore warnings
+# b.df<-lapply(paste0("./Data/Hydrology/",b.stats), read.table, header = T, sep = ",", stringsAsFactors = F) # gives warnings but that's ok
+# b.df <- bind_rows(b.df)
+# b.df$Reservoir <- sapply(strsplit(b.stats, split = "\\_|\\."),"[",3)
+# 
+# vol.df<-lapply(paste0("./Data/Hydrology/",vol.files), read.table, header = T, sep = ",", stringsAsFactors = F)
+# vol.df <- bind_rows(vol.df)
+# vol.df$Reservoir <- sapply(strsplit(vol.files, split = "\\_|\\."),"[",3)
+# 
+# # Rename columns
+# vol.df <- vol.df %>% dplyr::select(Reservoir,
+#                          water.lev_m = Plane_Height,
+#                          volume_m3 = Volume)
+# 
+# b.df <- b.df %>% dplyr::select(Reservoir,
+#                                pxl_no = COUNT,
+#                                area_m2 = AREA,
+#                                max.depth_m = MAX,
+#                                min.depth_m = MIN,
+#                                mean.depth_m = MEAN,
+#                                std.depth_m = STD)
+# 
+# setDT(vol.df); setDT(b.df)
+# # merge
+# res.stats <- b.df[vol.df, , on = .(Reservoir)]
+# 
+# # convert to hm3 to compare with predicted data
+# res.stats[, volume_hm3 := volume_m3 * 0.000001]
+# # convert to km2 to compare with predicted data
+# res.stats[, area_km2 := area_m2 * 0.000001]
+# # remove unnecessary objects
+# rm(vol.df, b.df, vol.files, b.stats)
+# 
+# sum.wat[res.stats, c("gis.volume_hm3","gis.area_km2","gis.pxl_no") := list(i.volume_hm3,
+#                                                               i.area_km2, i.pxl_no), on = .(Reservoir)]
+# rm(area.gams, wat.gams, wat.key, wat.lev, p, res.stats, main, meta, rest)
+# #sum.wat[, pxl_no := mean.area_km2 / (0.018*0.018)] # Pixel size is 18 m x 18 m
 
 # 2. Read in discharge data -------------------------------------------------------------------------
 # Code used to summarise discharge data by HQ:
@@ -371,190 +377,190 @@ rm(area.gams, wat.gams, wat.key, wat.lev, p, res.stats, main, meta, rest)
 #write.table(monthly, file = "./Data/Summary/river_discharge_monthly.csv",
 #            sep = ";", dec = ".", row.names = F)
 
-#########################################################################
-
-# Inflows to reservoirs are either:
-# 1. Sampled river section before the reservoir OR
-# 2. Outflow of the prior reservoir within continuum
-# The sequence is:
-# 2015: RO2
-# 2016: RO2 > RO1
-# 2017 & 2018: RO3 > RO2 > RO1
-# Thus, the outflow of RO3 is the inflow of RO2
-
-# read in summary files of HQ reservoir discharge data
-mon.dis <- read.csv("./Data/Summary/RO_discharge_monthly.csv",
-                    sep = ";", dec = ".", stringsAsFactors = F)
-# read in summary files of HQ river discharge data
-mon.riv <- read.csv("./Data/Summary/river_discharge_monthly.csv",
-                    sep = ";", dec = ".", stringsAsFactors = F)
-
-# Hydro-Quebec Discharge is given in m3 per second
-setDT(mon.dis)
-setDT(mon.riv)
-
-# melt HQ data into long format
-molten.dis <- melt.data.table(
-  mon.dis,
-  id.vars = c("year","month"),
-  measure.vars = patterns(".into.turb_mean", ".overflow_mean"),
-  variable.name = "Reservoir",
-  value.name = c("dis.into.turb", "dis.overflow")
-)
-# rename reservoir factors
-molten.dis[, Reservoir := paste0("RO", Reservoir)]
-# add turbine and overflow discharge
-molten.dis[, dis.sum := dis.into.turb + dis.overflow]
-
-# calculate mean across years
-#molten.dis <- molten.dis[dis.sum > 0, .(mean.dis_m3s = mean(dis.sum, na.rm = T)), by = .(Reservoir, month)]
-
-# Get river data, we need:
-# RO3 inflow (river) 2015-2018 (ROMA0832)
-# RO2 inflow (river) 2015-2016 (ROMA0977)
-# calculate means across years (2014-20)
-#mon.riv <- mon.riv[mean > 0 & year >= 2014, .(mean.dis_m3s = mean(mean, na.rm = T)), by = .(.id, month)]
-# Assign reservoir correspondence
-mon.riv[.id == "ROMA0832", Reservoir := "RO3"]
-mon.riv[.id == "ROMA0977", Reservoir := "RO2"]
-
-# create data.frame to fill
-# we will do this for all three reservoirs
-res.sum <- data.frame(Reservoir = c(rep("RO1", times = 12*4),
-                         rep("RO2", times = 12*4),
-                         rep("RO3", times = 12*4)),
-                      year = rep(2015:2018, each = 12, times = 3),
-           month = rep(1:12, times = 3*4))
-
-setDT(res.sum); setDT(molten.dis); setDT(mon.riv)
-
-#---- Populate data.frame ----#
-#
-#- RO2 inflow -#
-## 2015, 2016: river
-## 2017 onwards: RO3 outflow
-#- RO2 outflow -#
-## 2015 onwards: RO2 outflow
-#
-#- RO1 inflow -#
-## 2016 onwards: RO2 outflow
-#- RO1 outflow -#
-## 2016 onwards: RO1 outflow
-#
-#- RO3 inflow -#
-## 2017-2020 river
-#- RO3 outflow -#
-# 2017 onwards: RO3 outflow
-
-# Initiate discharge columns out and into reservoir
-# Outflows from reservoirs are constant over the years, simple join
-# Outflow from RO1 (outflow)
-res.sum[molten.dis[Reservoir == "RO1"], 
-       out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
-# Outflow from RO2 (outflow)
-res.sum[molten.dis[Reservoir == "RO2"], 
-        out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
-# Outflow from RO3 (outflow)
-res.sum[molten.dis[Reservoir == "RO3"], 
-       out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
-
-
-# Inflows depend on the year, sometimes river, other times the reservoir before in the continuum
-# Inflow into RO1 (constant, RO2 outflow)
-res.sum[molten.dis[Reservoir == "RO2", ][, Reservoir := "RO1"], 
-        in.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
-
-# Inflow into RO2
-## River
-res.sum[mon.riv[Reservoir == "RO2" & (year == 2015 | year == 2016),], in.dis_m3s := i.mean,
-       on = .(year, month, Reservoir)]
-## RO3 outflow
-res.sum[molten.dis[Reservoir == "RO3" & !(year == 2015 | year == 2016), ][, Reservoir := "RO2"], 
-        in.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
-
-# Inflow into RO3
-## River
-res.sum[mon.riv[Reservoir == "RO3" & (year < 2020),], in.dis_m3s := i.mean,
-       on = .(year, month, Reservoir)]
-## RO4 outflow
-#master[molten.dis[Reservoir == "RO4" & !(year < 2020), ][, Reservoir := "RO3"], 
-#       dis.res.in := i.dis.out, on = .(year, sample.type.year == Reservoir)]
-
-# get relevant months
-res.sum <- res.sum[month == 6 | month == 8 | month == 10,]
-# omit any NAs (= dam not built yet)
-res.sum <- res.sum[!is.na(out.dis_m3s),][out.dis_m3s != 0,]
-
-# merge with reservoir stats
-res.sum <- res.sum[sum.wat, , on = .(Reservoir, year, month), nomatch=NULL]
-
-# save this
-#write.table(res.sum, "./Data/Summary/mean_res.vol_dis.inout.csv", sep = ',', dec = ".", row.names = F)
-
-# Calculate residence time:
-# 1. Transform units
-res.sum[,c("mean.vol_m3",
-           "gis.vol_m3") := list(mean.vol_hm3 * 1000000,
-                                 gis.volume_hm3 * 1000000)]
-
-# 2. Calculate residence time in s and convert to hours and days
-# decided to take estimated volume based on models rather than GIS
-res.sum[, wrt_s := mean.vol_m3 / out.dis_m3s]
-res.sum[, wrt_h := wrt_s / (60 * 60)]
-res.sum[, wrt_d := wrt_h / 24]
-
-# Number of pixels in each reservoir
-# Pixel area in km2
-pixel.area2 <- (18*18) * 0.000001
-
-ggplot(res.sum, aes(x = out.dis_m3s, y = mean.vol_hm3, colour = Reservoir)) +
-  geom_point()
-
-# Add main channel area from GIS
-# Estimated by taking the La Romaine river shape, creating a buffer of 300m and 200m.
-# Then, subtract the buffer area  from the Reservoir shapes
-# 300m was chosen for RO2 as the river size before flooding ranged between 150-250m
-# 200m was chosen for RO1, since the reservoir itself is very small and resembles greatly the river
-
-# res.sum[Reservoir == "RO1", buffer.area_km2 := 10.139482]
-# res.sum[Reservoir == "RO2", buffer.area_km2 := 38.303566]
-# res.sum[Reservoir == "RO3", buffer.area_km2 := 20.922903]
-
-res.sum[Reservoir == "RO1", pxl.no_18 := 1267] # number of pixels along main channel, times pixel area
-res.sum[Reservoir == "RO2", pxl.no_18 := 2932]
-res.sum[Reservoir == "RO3", pxl.no_18 := 1520]
-
-# WRT in each pixel
-res.sum[, wrt.px18_d := wrt_d / pxl.no_18]
-
-setcolorder(res.sum, neworder = c("Reservoir","year","month","out.dis_m3s","in.dis_m3s",
-                                  "mean.vol_m3", "gis.vol_m3", "mean.area_km2", "gis.area_km2",
-                                  "wrt_d", "pxl.no_18","wrt.px18_d"))
-out <- res.sum
-
-out[, wrt_s := wrt_d *86400] # convert days to seconds
-out[, wrt.px18_s := wrt_s / pxl.no_18] # calculate the time in seconds within each pixel
-out[, veloc.px18_ms := 18 / wrt.px18_s ] # get velocity by dividing the length of pixel
-
-mean.wrt <- out[, .(mean.wrt_d = mean(wrt_d, na.rm = T),
-                    mean.veloc_ms = mean(veloc.px18_ms, na.rm = T)), by = .(Reservoir)]
-
-# export another discharge summary
-
-(p <- ggplot(out, aes(x = as.factor(month), y = wrt_d)) +
-  ggpubr::theme_pubr() +
-  geom_boxplot(aes(fill = Reservoir)) +
-  labs(x = "Month", y = "WRT (d)") +
-  scale_fill_viridis_d())
-#ggsave("./Figures/Methods/WRT_byseason_RO.png", p, height = 10, width = 10, units = "cm")
-
-# write.table(mean.wrt, "./Output/reservoir_wrt_seasonal_means.csv", sep = ",", row.names = F)
-# write.table(out, paste0("./Output/reservoir_wrt_seasonal_perpixel_", Sys.Date(), ".csv"), sep = ",", row.names = F)
-
-rm(mean.wrt, molten.dis, mon.dis, mon.riv, p, res.sum)
-
-# At this point we have the water residence time and
-# velocity in each pixel along the reservoir main channel
+# #########################################################################
+# 
+# # Inflows to reservoirs are either:
+# # 1. Sampled river section before the reservoir OR
+# # 2. Outflow of the prior reservoir within continuum
+# # The sequence is:
+# # 2015: RO2
+# # 2016: RO2 > RO1
+# # 2017 & 2018: RO3 > RO2 > RO1
+# # Thus, the outflow of RO3 is the inflow of RO2
+# 
+# # read in summary files of HQ reservoir discharge data
+# mon.dis <- read.csv("./Data/Summary/RO_discharge_monthly.csv",
+#                     sep = ";", dec = ".", stringsAsFactors = F)
+# # read in summary files of HQ river discharge data
+# mon.riv <- read.csv("./Data/Summary/river_discharge_monthly.csv",
+#                     sep = ";", dec = ".", stringsAsFactors = F)
+# 
+# # Hydro-Quebec Discharge is given in m3 per second
+# setDT(mon.dis)
+# setDT(mon.riv)
+# 
+# # melt HQ data into long format
+# molten.dis <- melt.data.table(
+#   mon.dis,
+#   id.vars = c("year","month"),
+#   measure.vars = patterns(".into.turb_mean", ".overflow_mean"),
+#   variable.name = "Reservoir",
+#   value.name = c("dis.into.turb", "dis.overflow")
+# )
+# # rename reservoir factors
+# molten.dis[, Reservoir := paste0("RO", Reservoir)]
+# # add turbine and overflow discharge
+# molten.dis[, dis.sum := dis.into.turb + dis.overflow]
+# 
+# # calculate mean across years
+# #molten.dis <- molten.dis[dis.sum > 0, .(mean.dis_m3s = mean(dis.sum, na.rm = T)), by = .(Reservoir, month)]
+# 
+# # Get river data, we need:
+# # RO3 inflow (river) 2015-2018 (ROMA0832)
+# # RO2 inflow (river) 2015-2016 (ROMA0977)
+# # calculate means across years (2014-20)
+# #mon.riv <- mon.riv[mean > 0 & year >= 2014, .(mean.dis_m3s = mean(mean, na.rm = T)), by = .(.id, month)]
+# # Assign reservoir correspondence
+# mon.riv[.id == "ROMA0832", Reservoir := "RO3"]
+# mon.riv[.id == "ROMA0977", Reservoir := "RO2"]
+# 
+# # create data.frame to fill
+# # we will do this for all three reservoirs
+# res.sum <- data.frame(Reservoir = c(rep("RO1", times = 12*4),
+#                          rep("RO2", times = 12*4),
+#                          rep("RO3", times = 12*4)),
+#                       year = rep(2015:2018, each = 12, times = 3),
+#            month = rep(1:12, times = 3*4))
+# 
+# setDT(res.sum); setDT(molten.dis); setDT(mon.riv)
+# 
+# #---- Populate data.frame ----#
+# #
+# #- RO2 inflow -#
+# ## 2015, 2016: river
+# ## 2017 onwards: RO3 outflow
+# #- RO2 outflow -#
+# ## 2015 onwards: RO2 outflow
+# #
+# #- RO1 inflow -#
+# ## 2016 onwards: RO2 outflow
+# #- RO1 outflow -#
+# ## 2016 onwards: RO1 outflow
+# #
+# #- RO3 inflow -#
+# ## 2017-2020 river
+# #- RO3 outflow -#
+# # 2017 onwards: RO3 outflow
+# 
+# # Initiate discharge columns out and into reservoir
+# # Outflows from reservoirs are constant over the years, simple join
+# # Outflow from RO1 (outflow)
+# res.sum[molten.dis[Reservoir == "RO1"], 
+#        out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
+# # Outflow from RO2 (outflow)
+# res.sum[molten.dis[Reservoir == "RO2"], 
+#         out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
+# # Outflow from RO3 (outflow)
+# res.sum[molten.dis[Reservoir == "RO3"], 
+#        out.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
+# 
+# 
+# # Inflows depend on the year, sometimes river, other times the reservoir before in the continuum
+# # Inflow into RO1 (constant, RO2 outflow)
+# res.sum[molten.dis[Reservoir == "RO2", ][, Reservoir := "RO1"], 
+#         in.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
+# 
+# # Inflow into RO2
+# ## River
+# res.sum[mon.riv[Reservoir == "RO2" & (year == 2015 | year == 2016),], in.dis_m3s := i.mean,
+#        on = .(year, month, Reservoir)]
+# ## RO3 outflow
+# res.sum[molten.dis[Reservoir == "RO3" & !(year == 2015 | year == 2016), ][, Reservoir := "RO2"], 
+#         in.dis_m3s := i.dis.sum, on = .(year, month, Reservoir)]
+# 
+# # Inflow into RO3
+# ## River
+# res.sum[mon.riv[Reservoir == "RO3" & (year < 2020),], in.dis_m3s := i.mean,
+#        on = .(year, month, Reservoir)]
+# ## RO4 outflow
+# #master[molten.dis[Reservoir == "RO4" & !(year < 2020), ][, Reservoir := "RO3"], 
+# #       dis.res.in := i.dis.out, on = .(year, sample.type.year == Reservoir)]
+# 
+# # get relevant months
+# res.sum <- res.sum[month == 6 | month == 8 | month == 10,]
+# # omit any NAs (= dam not built yet)
+# res.sum <- res.sum[!is.na(out.dis_m3s),][out.dis_m3s != 0,]
+# 
+# # merge with reservoir stats
+# res.sum <- res.sum[sum.wat, , on = .(Reservoir, year, month), nomatch=NULL]
+# 
+# # save this
+# #write.table(res.sum, "./Data/Summary/mean_res.vol_dis.inout.csv", sep = ',', dec = ".", row.names = F)
+# 
+# # Calculate residence time:
+# # 1. Transform units
+# res.sum[,c("mean.vol_m3",
+#            "gis.vol_m3") := list(mean.vol_hm3 * 1000000,
+#                                  gis.volume_hm3 * 1000000)]
+# 
+# # 2. Calculate residence time in s and convert to hours and days
+# # decided to take estimated volume based on models rather than GIS
+# res.sum[, wrt_s := mean.vol_m3 / out.dis_m3s]
+# res.sum[, wrt_h := wrt_s / (60 * 60)]
+# res.sum[, wrt_d := wrt_h / 24]
+# 
+# # Number of pixels in each reservoir
+# # Pixel area in km2
+# pixel.area2 <- (18*18) * 0.000001
+# 
+# ggplot(res.sum, aes(x = out.dis_m3s, y = mean.vol_hm3, colour = Reservoir)) +
+#   geom_point()
+# 
+# # Add main channel area from GIS
+# # Estimated by taking the La Romaine river shape, creating a buffer of 300m and 200m.
+# # Then, subtract the buffer area  from the Reservoir shapes
+# # 300m was chosen for RO2 as the river size before flooding ranged between 150-250m
+# # 200m was chosen for RO1, since the reservoir itself is very small and resembles greatly the river
+# 
+# # res.sum[Reservoir == "RO1", buffer.area_km2 := 10.139482]
+# # res.sum[Reservoir == "RO2", buffer.area_km2 := 38.303566]
+# # res.sum[Reservoir == "RO3", buffer.area_km2 := 20.922903]
+# 
+# res.sum[Reservoir == "RO1", pxl.no_18 := 1267] # number of pixels along main channel, times pixel area
+# res.sum[Reservoir == "RO2", pxl.no_18 := 2932]
+# res.sum[Reservoir == "RO3", pxl.no_18 := 1520]
+# 
+# # WRT in each pixel
+# res.sum[, wrt.px18_d := wrt_d / pxl.no_18]
+# 
+# setcolorder(res.sum, neworder = c("Reservoir","year","month","out.dis_m3s","in.dis_m3s",
+#                                   "mean.vol_m3", "gis.vol_m3", "mean.area_km2", "gis.area_km2",
+#                                   "wrt_d", "pxl.no_18","wrt.px18_d"))
+# out <- res.sum
+# 
+# out[, wrt_s := wrt_d *86400] # convert days to seconds
+# out[, wrt.px18_s := wrt_s / pxl.no_18] # calculate the time in seconds within each pixel
+# out[, veloc.px18_ms := 18 / wrt.px18_s ] # get velocity by dividing the length of pixel
+# 
+# mean.wrt <- out[, .(mean.wrt_d = mean(wrt_d, na.rm = T),
+#                     mean.veloc_ms = mean(veloc.px18_ms, na.rm = T)), by = .(Reservoir)]
+# 
+# # export another discharge summary
+# 
+# (p <- ggplot(out, aes(x = as.factor(month), y = wrt_d)) +
+#   ggpubr::theme_pubr() +
+#   geom_boxplot(aes(fill = Reservoir)) +
+#   labs(x = "Month", y = "WRT (d)") +
+#   scale_fill_viridis_d())
+# #ggsave("./Figures/Methods/WRT_byseason_RO.png", p, height = 10, width = 10, units = "cm")
+# 
+# # write.table(mean.wrt, "./Output/reservoir_wrt_seasonal_means.csv", sep = ",", row.names = F)
+# # write.table(out, paste0("./Output/reservoir_wrt_seasonal_perpixel_", Sys.Date(), ".csv"), sep = ",", row.names = F)
+# 
+# rm(mean.wrt, molten.dis, mon.dis, mon.riv, p, res.sum)
+# 
+# # At this point we have the water residence time and
+# # velocity in each pixel along the reservoir main channel
 
 # Fluvial systems --------------------------------------------------------------------------------------------------------------
 
@@ -826,7 +832,7 @@ lm.eq <- c(substitute(log ~ italic(y) == a + b %.% log ~ italic(x), lm_coef), # 
 
 
 (p <- ggarrange(qp, vp, common.legend = T, ncol = 2, legend = "right"))
-#ggsave("./Figures/Methods/models_flacc_Q&v_05.02.2024.png", width = 25, height = 10, units = "cm")
+ggsave("./Figures/figS1.png", width = 25, height = 10, units = "cm")
 
 # saveRDS(q.poly.fc, "./Objects/poly.model_flacc_discharge_flowcond_05.02.2024.rds")
 # saveRDS(poly.fc, "./Objects/poly.model_flacc_velocity_flowcond_05.02.2024.rds")
@@ -909,7 +915,7 @@ ggplot(newdat[,.(vel = mean(velocity_ms)), by = list(Year, Month, flow.condition
     theme(legend.box.margin = margin(2)))
 
 (p <- ggarrange(bq, bv, ncol = 2, common.legend = T, legend = "right"))
-#ggsave("./Figures/Methods/dis_vel_est.vs.meas_byStreamorder_05.02.2024.png", p, width = 21, height = 10, units = "cm")
+# ggsave("./Figures/figS2.png", p, width = 21, height = 10, units = "cm")
 
 # Sanity check
 any(is.na(newdat$velocity_ms)) # all pixels have an estimate? = should be FALSE
@@ -944,7 +950,60 @@ ggplot(mean.wrt, aes(x = mean.dis, y = mean.vel, colour = strah_ord)) +
   scale_colour_viridis_c(option = "cividis")
 
 # export data
-out <- readRDS("./Data/Traveltime/streamnet_pnts_time_05.02.2024.rds")
+# out <- readRDS("./Data/Traveltime/streamnet_pnts_time_05.02.2024.rds")
 
 # write.table(out, "./Data/Traveltime/streamnet_pnts_time_05.02.2024.csv", sep = ",", dec = ".", row.names = F)
 # saveRDS(out, "./Data/Traveltime/streamnet_pnts_time_05.02.2024.rds")
+
+
+
+
+
+sessionInfo()
+# R version 4.5.2 (2025-10-31)
+# Platform: x86_64-redhat-linux-gnu
+# Running under: Fedora Linux 43 (Workstation Edition)
+# 
+# Matrix products: default
+# BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.1
+# 
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+# [3] LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8    
+# [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+# [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                 
+# [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+# [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+# 
+# time zone: America/New_York
+# tzcode source: system (glibc)
+# 
+# attached base packages:
+#   [1] stats     graphics  grDevices datasets  utils     methods   base     
+# 
+# other attached packages:
+#   [1] raster_3.6-32       sp_2.2-1            mgcv_1.9-4         
+# [4] nlme_3.1-168        ggpubr_0.6.3        plotly_4.12.0      
+# [7] vegan_2.7-2         permute_0.9-10      lubridate_1.9.5    
+# [10] forcats_1.0.1       dplyr_1.2.0         purrr_1.2.1        
+# [13] readr_2.2.0         tidyr_1.3.2         tibble_3.3.1       
+# [16] ggplot2_4.0.2       tidyverse_2.0.0     plyr_1.8.9         
+# [19] stringr_1.6.0       data.table_1.18.2.1 readxl_1.4.5       
+# 
+# loaded via a namespace (and not attached):
+#   [1] gtable_0.3.6       htmlwidgets_1.6.4  rstatix_0.7.3      lattice_0.22-9    
+# [5] tzdb_0.5.0         CoprManager_0.5.8  vctrs_0.7.1        tools_4.5.2       
+# [9] crosstalk_1.2.2    generics_0.1.4     parallel_4.5.2     cluster_2.1.8.2   
+# [13] pkgconfig_2.0.3    Matrix_1.7-4       RColorBrewer_1.1-3 S7_0.2.1          
+# [17] lifecycle_1.0.5    compiler_4.5.2     farver_2.1.2       textshaping_1.0.4 
+# [21] terra_1.8-93       codetools_0.2-20   carData_3.0-6      htmltools_0.5.9   
+# [25] yaml_2.3.12        lazyeval_0.2.2     Formula_1.2-5      pillar_1.11.1     
+# [29] car_3.1-5          MASS_7.3-65        viridis_0.6.5      abind_1.4-8       
+# [33] tidyselect_1.2.1   digest_0.6.39      stringi_1.8.7      labeling_0.4.3    
+# [37] splines_4.5.2      cowplot_1.2.0      fastmap_1.2.0      grid_4.5.2        
+# [41] cli_3.6.5          magrittr_2.0.4     broom_1.0.12       withr_3.0.2       
+# [45] scales_1.4.0       backports_1.5.0    timechange_0.4.0   httr_1.4.8        
+# [49] gridExtra_2.3      ggsignif_0.6.4     cellranger_1.1.0   ragg_1.5.0        
+# [53] hms_1.1.4          viridisLite_0.4.3  rlang_1.1.7        Rcpp_1.1.1        
+# [57] glue_1.8.0         rstudioapi_0.18.0  jsonlite_2.0.0     R6_2.6.1          
+# [61] systemfonts_1.3.1 
