@@ -1,3 +1,11 @@
-Data/Traveltime/streamnet_pnts.txt
-Data/Traveltime/streamnet_pnts_time_05.02.2024.rds
-Data/Traveltime/flacc3000_streamnet_pnts_withfllength.txt
+.Rproj.user
+
+./Data/Traveltime/flacc3000_streamnet_pnts_withfllength.txt
+./Data/Traveltime/streamnet_pnts.txt
+./Data/Traveltime/streamnet_pnts_time_05.02.2024.rds
+
+./Objects/FT_randomization_output_2024-02-10.rds
+./Objects/MO_randomization_output_2024-02-10.rds
+./Objects/MO_model.ls_binned_2024-02-10.rds
+./Objects/FT_model.ls_binned_2024-02-11.rds
+./Objects/all_cors_2024-03-04.rds
